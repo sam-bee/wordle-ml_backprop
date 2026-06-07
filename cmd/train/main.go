@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/sam-bee/wordle-ml_backprop/internal/data"
+	"github.com/sam-bee/wordle-ml_backprop/internal/training"
 )
 
 const defaultBatchSize = 32
@@ -75,6 +76,19 @@ func main() {
 		os.Exit(1)
 	}
 	printBatchSummary(firstBatch)
+
+	result, err := training.RunSanityStep(firstBatch)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "run GoMLX training sanity step: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf(
+		"gomlx sanity step: initial_loss=%.6f training_loss=%.6f post_update_loss=%.6f update_completed=%t\n",
+		result.InitialLoss,
+		result.TrainingLoss,
+		result.PostUpdateLoss,
+		result.UpdateCompleted,
+	)
 }
 
 func printBatchSummary(batch data.Batch) {
