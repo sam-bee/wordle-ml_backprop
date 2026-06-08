@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sam-bee/wordle-ml_backprop/internal/actionspace"
 	"github.com/sam-bee/wordle-ml_backprop/internal/data"
@@ -121,6 +122,8 @@ func main() {
 		*maxValidationBatches,
 	)
 
+	runStarted := time.Now()
+
 	initialValidation, err := evaluateSplit(policyTrainer, validationSplit, *batchSize, *maxValidationBatches)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "initial validation: %v\n", err)
@@ -145,6 +148,7 @@ func main() {
 		printLossStats(fmt.Sprintf("epoch %d validation summary", epoch), lastValidation)
 		fmt.Printf("epoch %d validation_delta_from_start=%.6f\n", epoch, lastValidation.MeanLoss()-initialValidation.MeanLoss())
 	}
+	fmt.Printf("training run complete: elapsed=%s\n", formatDuration(time.Since(runStarted)))
 }
 
 type lossStats struct {
@@ -153,6 +157,7 @@ type lossStats struct {
 	SumLoss float64
 	First   float64
 	Last    float64
+	Elapsed time.Duration
 }
 
 func (stats *lossStats) Add(batch data.Batch, loss float64) {
@@ -172,12 +177,27 @@ func (stats lossStats) MeanLoss() float64 {
 	return stats.SumLoss / float64(stats.Batches)
 }
 
+func (stats lossStats) BatchesPerSecond() float64 {
+	if stats.Elapsed <= 0 {
+		return math.NaN()
+	}
+	return float64(stats.Batches) / stats.Elapsed.Seconds()
+}
+
+func (stats lossStats) SamplesPerSecond() float64 {
+	if stats.Elapsed <= 0 {
+		return math.NaN()
+	}
+	return float64(stats.Samples) / stats.Elapsed.Seconds()
+}
+
 func trainEpoch(policyTrainer *training.PolicyTrainer, split *data.Split, batchSize, maxBatches, logEvery, epoch int) (lossStats, error) {
 	iterator, err := data.NewBatchIterator(split, batchSize)
 	if err != nil {
 		return lossStats{}, err
 	}
 
+	started := time.Now()
 	var stats lossStats
 	for {
 		if maxBatches > 0 && stats.Batches >= maxBatches {
@@ -192,13 +212,15 @@ func trainEpoch(policyTrainer *training.PolicyTrainer, split *data.Split, batchS
 			return lossStats{}, fmt.Errorf("batch %d: %w", stats.Batches+1, err)
 		}
 		stats.Add(batch, loss)
+		stats.Elapsed = time.Since(started)
 		if logEvery > 0 && stats.Batches%logEvery == 0 {
-			fmt.Printf("epoch %d train progress: batches=%d samples=%d loss=%.6f mean_loss=%.6f\n", epoch, stats.Batches, stats.Samples, stats.Last, stats.MeanLoss())
+			fmt.Printf("epoch %d train progress: batches=%d samples=%d loss=%.6f mean_loss=%.6f elapsed=%s batches_per_sec=%.2f samples_per_sec=%.2f\n", epoch, stats.Batches, stats.Samples, stats.Last, stats.MeanLoss(), formatDuration(stats.Elapsed), stats.BatchesPerSecond(), stats.SamplesPerSecond())
 		}
 	}
 	if stats.Batches == 0 {
 		return lossStats{}, fmt.Errorf("no training batches")
 	}
+	stats.Elapsed = time.Since(started)
 	return stats, nil
 }
 
@@ -208,6 +230,7 @@ func evaluateSplit(policyTrainer *training.PolicyTrainer, split *data.Split, bat
 		return lossStats{}, err
 	}
 
+	started := time.Now()
 	var stats lossStats
 	for {
 		if maxBatches > 0 && stats.Batches >= maxBatches {
@@ -222,15 +245,21 @@ func evaluateSplit(policyTrainer *training.PolicyTrainer, split *data.Split, bat
 			return lossStats{}, fmt.Errorf("batch %d: %w", stats.Batches+1, err)
 		}
 		stats.Add(batch, loss)
+		stats.Elapsed = time.Since(started)
 	}
 	if stats.Batches == 0 {
 		return lossStats{}, fmt.Errorf("no evaluation batches")
 	}
+	stats.Elapsed = time.Since(started)
 	return stats, nil
 }
 
 func printLossStats(label string, stats lossStats) {
-	fmt.Printf("%s: batches=%d samples=%d first_loss=%.6f last_loss=%.6f mean_loss=%.6f\n", label, stats.Batches, stats.Samples, stats.First, stats.Last, stats.MeanLoss())
+	fmt.Printf("%s: batches=%d samples=%d first_loss=%.6f last_loss=%.6f mean_loss=%.6f elapsed=%s batches_per_sec=%.2f samples_per_sec=%.2f\n", label, stats.Batches, stats.Samples, stats.First, stats.Last, stats.MeanLoss(), formatDuration(stats.Elapsed), stats.BatchesPerSecond(), stats.SamplesPerSecond())
+}
+
+func formatDuration(duration time.Duration) string {
+	return duration.Round(time.Millisecond).String()
 }
 
 func validatePositiveInt(name string, value int) {
