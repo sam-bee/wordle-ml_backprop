@@ -2,6 +2,7 @@
 
 build:
 	go build -o /tmp/wordle-backprop-train ./cmd/train
+	go build -o /tmp/wordle-backprop-play ./cmd/play
 
 test:
 	go test ./...
