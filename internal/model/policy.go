@@ -6,7 +6,6 @@ import (
 	"github.com/gomlx/gomlx/pkg/core/graph"
 	"github.com/gomlx/gomlx/pkg/core/shapes"
 	"github.com/gomlx/gomlx/pkg/ml/context"
-	"github.com/gomlx/gomlx/pkg/ml/context/initializers"
 	"github.com/gomlx/gomlx/pkg/ml/layers"
 	"github.com/gomlx/gomlx/pkg/ml/layers/activations"
 
@@ -29,7 +28,6 @@ const (
 
 	FixedActionFeatureDim     = 26
 	TrainableActionFeatureDim = PolicyVectorDim - FixedActionFeatureDim
-	OutputTailStddev          = 0.05
 )
 
 // PolicyModel implements the Wordle policy architecture specified in
@@ -105,7 +103,7 @@ func ActionLogits(ctx *context.Context, policyVector, fixedActionFeatures *graph
 	policyFixed := graph.Slice(policyVector, graph.AxisRange(), graph.AxisRange(0, FixedActionFeatureDim))
 	policyTail := graph.Slice(policyVector, graph.AxisRange(), graph.AxisRange(FixedActionFeatureDim, PolicyVectorDim))
 
-	tail := ctx.WithInitializer(initializers.RandomNormalFn(ctx, OutputTailStddev)).
+	tail := ctx.WithInitializer(outputTailInitializer(ctx)).
 		VariableWithShape("trainable_tail", shapes.Make(policyVector.DType(), actionCount, TrainableActionFeatureDim)).
 		ValueGraph(g)
 
@@ -115,7 +113,7 @@ func ActionLogits(ctx *context.Context, policyVector, fixedActionFeatures *graph
 }
 
 func dense(ctx *context.Context, input *graph.Node, outputDim int) *graph.Node {
-	return layers.Dense(ctx.WithInitializer(initializers.HeFn(ctx)), input, true, outputDim)
+	return layers.Dense(ctx.WithInitializer(denseInitializer(ctx)), input, true, outputDim)
 }
 
 func validatePolicyInputs(turnFeatures, occupiedTurns, virginGrid, fixedActionFeatures *graph.Node) {

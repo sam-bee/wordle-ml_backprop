@@ -257,3 +257,16 @@ function initialize_dense_layer(layer, input_size, output_size, rng, dense_weigh
 The exact RNG implementation does not affect the model contract unless bit-for-bit seed compatibility is required. For a
 portable reimplementation, the important rule is independent normal draws with the means, standard deviations, dimensions,
 and fp16 storage conversion specified above.
+
+## GoMLX Implementation Status
+
+The GoMLX implementation exposes these rules in `internal/model`:
+
+- `RandomInitializationConfig` holds `dense_weight_gain` and `output_embedding_tail_stddev`.
+- `ConfigureRandomInitialization` stores validated initialization settings on a GoMLX context.
+- Dense layers in `PolicyModel` use `Normal(0, dense_weight_gain * sqrt(2/fan_in))` weights and zero biases.
+- The trainable output tail uses `Normal(0, output_embedding_tail_stddev)`.
+- `FixedActionFeatures` and `FixedActionFeatureMatrix` build the fixed 26-value action feature prefix.
+
+The current project has no model persistence layer yet, so GoMLX variables are initialized in the graph variable dtype.
+The fp16 storage rule above belongs to the future persistence/checkpointing implementation.
