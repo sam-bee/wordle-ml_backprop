@@ -16,7 +16,7 @@ const (
 )
 
 // PolicyLoss implements the supervised policy loss described in
-// docs/todo/loss-shaping.md.
+// docs/loss-shaping.md.
 //
 // labels[0] must be the teacher top-k action indices with shape [batch, 16].
 // logits[0] must be full-vocabulary action logits with shape [batch, action_count].

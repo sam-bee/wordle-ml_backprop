@@ -33,7 +33,7 @@ const (
 )
 
 // PolicyModel implements the Wordle policy architecture specified in
-// docs/todo/model-architecture.md.
+// docs/model-architecture.md.
 //
 // It expects four tensors:
 //   - raw turn features: [batch, 5, 145]
