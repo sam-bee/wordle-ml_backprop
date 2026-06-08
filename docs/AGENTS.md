@@ -17,6 +17,16 @@ to systems access problems. You MUST stop and ask if you are missing something i
 
 Any documentation necessary should be in the `docs/` folder, in markdown by default.
 
+## Important Documentation of Model Architecture Changes
+
+If the design of the model changes, this needs to be documented in `changes-to-model-architecture.md`, in the `docs/`
+folder. This is important, because a parallel project exists where a similar model architecture is in play. It will be
+useful to another project to hear exactly how model architecture has been changed since it was first implemented, and
+why.
+
+This only relates to the structure of the model (input encoders, dense trunk, output embeddings etc.). It is not
+required to document the actual training process here.
+
 ## Version Control
 
 The two remotes are called `gitlab` and `github`. They should typically be kept in sync, and you should be pushing to
