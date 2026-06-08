@@ -200,9 +200,12 @@ If any teacher word is missing from the action vocabulary, conversion fails clea
 
 | Component | Current choice |
 | --- | --- |
-| backend | GoMLX SimpleGo backend |
+| backend | GoMLX XLA backend with CUDA PJRT plugin |
 | model | `model.PolicyModel` |
 | target | teacher top-16 action indices |
 | loss | `training.PolicyLoss` from `docs/loss-shaping.md` |
 | optimizer | SGD, learning rate `0.05`, no decay |
 | execution | initial eval loss, one train step, post-update eval loss |
+
+The trainer disables GoMLX PJRT auto-installation in code and requires the CUDA backend to expose exactly one visible
+device. The system environment is responsible for masking CUDA visibility so that this one device is the RTX 5070 Ti.

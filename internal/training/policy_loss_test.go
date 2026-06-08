@@ -4,7 +4,6 @@ import (
 	"math"
 	"testing"
 
-	"github.com/gomlx/gomlx/backends/simplego"
 	"github.com/gomlx/gomlx/pkg/core/dtypes"
 	"github.com/gomlx/gomlx/pkg/core/graph"
 	"github.com/gomlx/gomlx/pkg/core/tensors"
@@ -68,9 +67,9 @@ func TestPolicyLoss(t *testing.T) {
 func execPolicyLossGraph(t *testing.T, fn func(g *graph.Graph) *graph.Node) *tensors.Tensor {
 	t.Helper()
 
-	backend, err := simplego.New("")
+	backend, err := newPolicyBackend()
 	if err != nil {
-		t.Fatalf("create SimpleGo backend: %v", err)
+		t.Fatalf("create policy backend: %v", err)
 	}
 	t.Cleanup(backend.Finalize)
 

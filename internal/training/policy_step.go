@@ -2,8 +2,10 @@ package training
 
 import (
 	"fmt"
+	"strings"
 
-	"github.com/gomlx/gomlx/backends/simplego"
+	"github.com/gomlx/gomlx/backends"
+	"github.com/gomlx/gomlx/backends/xla"
 	"github.com/gomlx/gomlx/pkg/core/dtypes"
 	"github.com/gomlx/gomlx/pkg/core/tensors"
 	"github.com/gomlx/gomlx/pkg/ml/context"
@@ -15,14 +17,20 @@ import (
 	"github.com/sam-bee/wordle-ml_backprop/internal/model"
 )
 
-const policyLearningRate = 0.05
+const (
+	policyLearningRate        = 0.05
+	policyBackendConfig       = "cuda"
+	policyRequiredDeviceCount = 1
+)
 
 type PolicyStepResult struct {
-	ActionCount     int
-	InitialLoss     float64
-	TrainingLoss    float64
-	PostUpdateLoss  float64
-	UpdateCompleted bool
+	ActionCount        int
+	BackendDescription string
+	DeviceDescription  string
+	InitialLoss        float64
+	TrainingLoss       float64
+	PostUpdateLoss     float64
+	UpdateCompleted    bool
 }
 
 func RunPolicyStep(batch data.Batch, vocab actionspace.Vocabulary) (PolicyStepResult, error) {
@@ -34,9 +42,9 @@ func RunPolicyStep(batch data.Batch, vocab actionspace.Vocabulary) (PolicyStepRe
 		return result, err
 	}
 
-	backend, err := simplego.New("")
+	backend, err := newPolicyBackend()
 	if err != nil {
-		return result, fmt.Errorf("create SimpleGo backend: %w", err)
+		return result, err
 	}
 	defer backend.Finalize()
 
@@ -76,11 +84,43 @@ func RunPolicyStep(batch data.Batch, vocab actionspace.Vocabulary) (PolicyStepRe
 	}
 
 	result.ActionCount = len(vocab.Words)
+	result.BackendDescription = backend.Description()
+	result.DeviceDescription = backend.DeviceDescription(0)
 	result.InitialLoss = initialLoss
 	result.TrainingLoss = trainingLoss
 	result.PostUpdateLoss = postUpdateLoss
 	result.UpdateCompleted = true
 	return result, nil
+}
+
+func newPolicyBackend() (backends.Backend, error) {
+	xla.EnableAutoInstall(false)
+
+	backend, err := xla.New(policyBackendConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create XLA CUDA backend: %w", err)
+	}
+	if err := validatePolicyBackend(backend); err != nil {
+		backend.Finalize()
+		return nil, err
+	}
+	return backend, nil
+}
+
+func validatePolicyBackend(backend backends.Backend) error {
+	if backend == nil {
+		return fmt.Errorf("backend is nil")
+	}
+	if backend.Name() != xla.BackendName {
+		return fmt.Errorf("backend is %q, expected %q", backend.Name(), xla.BackendName)
+	}
+	if description := strings.ToLower(backend.Description()); !strings.Contains(description, policyBackendConfig) {
+		return fmt.Errorf("backend description %q does not identify the %q plugin", backend.Description(), policyBackendConfig)
+	}
+	if got := backend.NumDevices(); got != policyRequiredDeviceCount {
+		return fmt.Errorf("XLA CUDA backend exposes %d devices, expected exactly %d", got, policyRequiredDeviceCount)
+	}
+	return nil
 }
 
 func BatchToPolicyTensors(batch data.Batch, vocab actionspace.Vocabulary) (inputs, labels []*tensors.Tensor, err error) {

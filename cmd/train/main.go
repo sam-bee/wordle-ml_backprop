@@ -97,8 +97,10 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf(
-		"gomlx policy step: action_count=%d initial_loss=%.6f training_loss=%.6f post_update_loss=%.6f update_completed=%t\n",
+		"gomlx policy step: action_count=%d backend=%q device=%q initial_loss=%.6f training_loss=%.6f post_update_loss=%.6f update_completed=%t\n",
 		result.ActionCount,
+		result.BackendDescription,
+		result.DeviceDescription,
 		result.InitialLoss,
 		result.TrainingLoss,
 		result.PostUpdateLoss,
