@@ -22,7 +22,6 @@ func main() {
 	batchSize := flags.Int("batch-size", defaultBatchSize, "number of samples per sequential batch")
 	epochs := flags.Int("epochs", 1, "number of training epochs")
 	learningRate := flags.Float64("learning-rate", training.DefaultPolicyLearningRate, "SGD learning rate")
-	seed := flags.Int64("seed", training.DefaultPolicySeed, "GoMLX random seed")
 	logEvery := flags.Int("log-every", 50, "print training progress every n batches; 0 disables batch progress logs")
 	maxTrainBatches := flags.Int("max-train-batches", 0, "maximum training batches per epoch; 0 means all")
 	maxValidationBatches := flags.Int("max-validation-batches", 25, "maximum validation batches per evaluation; 0 means all")
@@ -101,22 +100,21 @@ func main() {
 		model.FixedActionFeatureDim,
 	)
 
-	policyTrainer, err := training.NewPolicyTrainer(vocab, training.PolicyTrainerConfig{
-		LearningRate: *learningRate,
-		Seed:         *seed,
-	})
+	trainerConfig := training.DefaultPolicyTrainerConfig()
+	trainerConfig.LearningRate = *learningRate
+	policyTrainer, err := training.NewPolicyTrainer(vocab, trainerConfig)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "build GoMLX policy trainer: %v\n", err)
 		os.Exit(1)
 	}
 	defer policyTrainer.Close()
 	fmt.Printf(
-		"trainer: action_count=%d backend=%q device=%q learning_rate=%g seed=%d epochs=%d max_train_batches=%d max_validation_batches=%d\n",
+		"trainer: action_count=%d backend=%q device=%q learning_rate=%g rng_seed=%d epochs=%d max_train_batches=%d max_validation_batches=%d\n",
 		policyTrainer.ActionCount,
 		policyTrainer.BackendDescription,
 		policyTrainer.DeviceDescription,
 		*learningRate,
-		*seed,
+		policyTrainer.Seed,
 		*epochs,
 		*maxTrainBatches,
 		*maxValidationBatches,

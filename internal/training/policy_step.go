@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/gomlx/gomlx/backends"
 	"github.com/gomlx/gomlx/backends/xla"
@@ -20,7 +21,6 @@ import (
 
 const (
 	DefaultPolicyLearningRate = 0.05
-	DefaultPolicySeed         = int64(1)
 
 	policyBackendConfig       = "cuda"
 	policyRequiredDeviceCount = 1
@@ -34,8 +34,12 @@ type PolicyTrainerConfig struct {
 func DefaultPolicyTrainerConfig() PolicyTrainerConfig {
 	return PolicyTrainerConfig{
 		LearningRate: DefaultPolicyLearningRate,
-		Seed:         DefaultPolicySeed,
+		Seed:         NewPolicySeed(),
 	}
+}
+
+func NewPolicySeed() int64 {
+	return time.Now().UnixNano()
 }
 
 func (config PolicyTrainerConfig) Validate() error {
@@ -52,6 +56,7 @@ type PolicyTrainer struct {
 	ActionCount        int
 	BackendDescription string
 	DeviceDescription  string
+	Seed               int64
 }
 
 type PolicyStepResult struct {
@@ -62,6 +67,7 @@ type PolicyStepResult struct {
 	TrainingLoss       float64
 	PostUpdateLoss     float64
 	UpdateCompleted    bool
+	Seed               int64
 }
 
 func NewPolicyTrainer(vocab actionspace.Vocabulary, config PolicyTrainerConfig) (*PolicyTrainer, error) {
@@ -70,6 +76,9 @@ func NewPolicyTrainer(vocab actionspace.Vocabulary, config PolicyTrainerConfig) 
 	}
 	if err := config.Validate(); err != nil {
 		return nil, err
+	}
+	if config.Seed == 0 {
+		config.Seed = NewPolicySeed()
 	}
 
 	backend, err := newPolicyBackend()
@@ -108,6 +117,7 @@ func NewPolicyTrainer(vocab actionspace.Vocabulary, config PolicyTrainerConfig) 
 		ActionCount:        len(vocab.Words),
 		BackendDescription: backend.Description(),
 		DeviceDescription:  backend.DeviceDescription(0),
+		Seed:               config.Seed,
 	}, nil
 }
 
@@ -165,6 +175,7 @@ func RunPolicyStep(batch data.Batch, vocab actionspace.Vocabulary) (PolicyStepRe
 	result.TrainingLoss = trainingLoss
 	result.PostUpdateLoss = postUpdateLoss
 	result.UpdateCompleted = true
+	result.Seed = trainer.Seed
 	return result, nil
 }
 
