@@ -177,42 +177,32 @@ The dense trunk is:
 Use ReLU after the 256-value layer and after the 128-value layer. Do not apply an activation to the final 64-value
 vector.
 
-## Legacy Training Check
+## Policy Training Step
 
-The older GoMLX training check still exists separately. It proves that parsed batches can become GoMLX tensors and that
-one update step can run, but it is not the policy model input contract.
+`actionspace.Load` imports the 4,739-word action vocabulary from
+`github.com/sam-bee/wordle-ml_game-engine/words.GetActionSpace`. The loader preserves the game-engine order and builds a
+`data.Word -> action_index` map.
 
-`training.BatchToTensors` currently converts one `data.Batch` into:
+`training.BatchToPolicyTensors` converts one `data.Batch` and an action vocabulary into:
 
 | Tensor | DType | Shape | Source |
 | --- | --- | ---: | --- |
-| input | `float32` | `[B,52]` | Temporary flattened numeric features. |
-| label | `float32` | `[B,16]` | `TopKReductionRatios` only. |
+| raw turn features | `float32` | `[B,5,145]` | `training.BatchToPolicyStateTensors` |
+| occupied-turn mask | `float32` | `[B,5]` | `training.BatchToPolicyStateTensors` |
+| virgin-grid flag | `float32` | `[B,1]` | `training.BatchToPolicyStateTensors` |
+| fixed action features | `float32` | `[action_count,26]` | `model.FixedActionFeatureMatrix` over the action vocabulary |
+| teacher top-k indices | `int32` | `[B,16]` | Each `TopKGuessWords` entry mapped through the action vocabulary |
 
-The current temporary input feature order is:
+The fixed action features are model inputs, and the teacher top-k indices are labels consumed by `training.PolicyLoss`.
+If any teacher word is missing from the action vocabulary, conversion fails clearly.
 
-1. `TurnDepth / 5`
-2. `ShortlistSizeBefore / 2309`
-3. all `PreviousGuessWords` bytes in slot/position order, encoded as `0` for padding and `A..Z` as `1..26 / 26`
-4. all `PreviousFeedback` values in turn/position order, encoded as green `1`, yellow `0.5`, and everything else `0`
-
-`model.SanityModel` expects one input tensor with at least rank 2, reshapes it to `[B,-1]`, requires exactly `52`
-features, and applies one dense layer with bias to produce `[B,16]`.
-
-`training.RunSanityStep` uses:
+`training.RunPolicyStep` uses:
 
 | Component | Current choice |
 | --- | --- |
 | backend | GoMLX SimpleGo backend |
-| model | one dense linear layer |
-| target | teacher reduction ratios only |
-| loss | GoMLX mean squared error |
+| model | `model.PolicyModel` |
+| target | teacher top-16 action indices |
+| loss | `training.PolicyLoss` from `docs/loss-shaping.md` |
 | optimizer | SGD, learning rate `0.05`, no decay |
 | execution | initial eval loss, one train step, post-update eval loss |
-
-## Remaining Gaps
-
-- Build or load the action vocabulary and fixed action feature tensor required by `model.PolicyModel`.
-- Convert parsed teacher top-16 guess words into action indices for `training.PolicyLoss`.
-- Wire `training.BatchToPolicyStateTensors`, `model.PolicyModel`, and `training.PolicyLoss` into the trainer.
-- Retire the older `model.SanityModel` and `training.BatchToTensors` path once the policy trainer is connected.

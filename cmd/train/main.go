@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/sam-bee/wordle-ml_backprop/internal/actionspace"
 	"github.com/sam-bee/wordle-ml_backprop/internal/data"
+	"github.com/sam-bee/wordle-ml_backprop/internal/model"
 	"github.com/sam-bee/wordle-ml_backprop/internal/training"
 )
 
@@ -77,13 +79,26 @@ func main() {
 	}
 	printBatchSummary(firstBatch)
 
-	result, err := training.RunSanityStep(firstBatch)
+	vocab, err := actionspace.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "run GoMLX training sanity step: %v\n", err)
+		fmt.Fprintf(os.Stderr, "load action space: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf(
-		"gomlx sanity step: initial_loss=%.6f training_loss=%.6f post_update_loss=%.6f update_completed=%t\n",
+		"action space: words=%d fixed_action_features[%d,%d]\n",
+		len(vocab.Words),
+		len(vocab.Words),
+		model.FixedActionFeatureDim,
+	)
+
+	result, err := training.RunPolicyStep(firstBatch, vocab)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "run GoMLX policy training step: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf(
+		"gomlx policy step: action_count=%d initial_loss=%.6f training_loss=%.6f post_update_loss=%.6f update_completed=%t\n",
+		result.ActionCount,
 		result.InitialLoss,
 		result.TrainingLoss,
 		result.PostUpdateLoss,

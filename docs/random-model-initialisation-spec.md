@@ -10,9 +10,9 @@ A randomized model consists of:
 - policy-model dense parameters
 - trainable output-embedding tail rows for the active action words
 
-The action words themselves are not random model parameters. They come from the action catalog. The runtime catalog is
-`action-space-randomised.txt`, with capacity 4,739 words. A randomized model is parameterized by an active action count
-`A`, where:
+The action words themselves are not random model parameters. They come from the action catalog provided by
+`github.com/sam-bee/wordle-ml_game-engine/words.GetActionSpace`, with capacity 4,739 words. A randomized model is
+parameterized by an active action count `A`, where:
 
 ```text
 1 <= A <= 4739
