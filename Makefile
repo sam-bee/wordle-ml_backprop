@@ -1,4 +1,4 @@
-.PHONY: build test smoke-train full-train resume-full-train
+.PHONY: build test smoke-train full-train resume-full-train tensorboard-up tensorboard-trash
 
 build:
 	go build -o /tmp/wordle-backprop-train ./cmd/train
@@ -15,3 +15,9 @@ full-train:
 
 resume-full-train:
 	go run ./cmd/train --batch-size 32 --epochs 1 --learning-rate 0.05 --max-train-batches 0 --max-validation-batches 0 --log-every 50 --resume
+
+tensorboard-up:
+	docker compose -f docker-compose.tensorboard.yml up --build -d
+
+tensorboard-trash:
+	docker compose -f docker-compose.tensorboard.yml down --remove-orphans --volumes

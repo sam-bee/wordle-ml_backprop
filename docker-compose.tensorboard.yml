@@ -1,0 +1,22 @@
+services:
+  tensorboard:
+    image: wordle-backprop:tensorboard
+    build:
+      context: .
+      dockerfile: docker/tensorboard.Dockerfile
+      args:
+        DOCKERCOMPOSE_UID: 1001
+        DOCKERCOMPOSE_GID: 1001
+    working_dir: /workspace
+    volumes:
+      - type: bind
+        source: ./checkpoints/runs
+        target: /tensorboard/runs
+        read_only: false
+    environment:
+      TENSORBOARD_LOGDIR: /tensorboard/runs
+      TENSORBOARD_HOST: 0.0.0.0
+      TENSORBOARD_PORT: "6006"
+      TENSORBOARD_DUMMY_RUN_DIR: /tensorboard/runs/dummy-backprop-run
+    ports:
+      - "127.0.0.1:6006:6006"

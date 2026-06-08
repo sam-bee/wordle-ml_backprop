@@ -1,2 +1,5 @@
 /checkpoints/*
 !/checkpoints/.gitkeep
+!/checkpoints/runs/
+/checkpoints/runs/*
+!/checkpoints/runs/.gitkeep
