@@ -3,6 +3,9 @@
 This document specifies the input expected by the Wordle policy model. It is written as an implementation-independent
 contract for reimplementing the same model architecture in another language.
 
+The Go implementation currently lives in `training.BatchToPolicyStateTensors`, which builds the raw turn features,
+occupied-turn mask, and virgin-grid flag consumed by `model.PolicyVector` and `model.PolicyModel`.
+
 ## Scope
 
 The model consumes a Wordle decision state and produces a policy vector for choosing the next guess. The decision state is
