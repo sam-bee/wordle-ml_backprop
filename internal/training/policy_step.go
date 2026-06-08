@@ -29,10 +29,11 @@ const (
 )
 
 type PolicyTrainerConfig struct {
-	LearningRate   float64
-	Seed           int64
-	CheckpointDir  string
-	CheckpointKeep int
+	LearningRate       float64
+	Seed               int64
+	CheckpointDir      string
+	CheckpointKeep     int
+	CheckpointMustLoad bool
 }
 
 func DefaultPolicyTrainerConfig() PolicyTrainerConfig {
@@ -53,6 +54,9 @@ func (config PolicyTrainerConfig) Validate() error {
 	}
 	if config.CheckpointDir != "" && config.CheckpointKeep < -1 {
 		return fmt.Errorf("checkpoint keep must be -1 or >= 0, got %d", config.CheckpointKeep)
+	}
+	if config.CheckpointMustLoad && config.CheckpointDir == "" {
+		return fmt.Errorf("checkpoint dir is required when checkpoint loading is required")
 	}
 	return nil
 }
@@ -116,8 +120,11 @@ func NewPolicyTrainer(vocab actionspace.Vocabulary, config PolicyTrainerConfig) 
 	checkpointLoaded := false
 	latestCheckpoint := ""
 	if config.CheckpointDir != "" {
-		checkpoint, err = checkpoints.Build(ctx).
-			Dir(config.CheckpointDir).
+		checkpointConfig := checkpoints.Build(ctx)
+		if config.CheckpointMustLoad {
+			checkpointConfig = checkpoints.Load(ctx)
+		}
+		checkpoint, err = checkpointConfig.Dir(config.CheckpointDir).
 			Keep(config.CheckpointKeep).
 			Done()
 		if err != nil {

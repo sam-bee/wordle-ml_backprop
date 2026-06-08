@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/sam-bee/wordle-ml_backprop/internal/actionspace"
@@ -17,10 +18,12 @@ import (
 )
 
 const (
-	defaultBatchSize       = 32
-	checkpointRootDir      = "checkpoints"
-	checkpointGoMLXDir     = "checkpoints/gomlx"
-	checkpointManifestPath = "checkpoints/manifest.json"
+	defaultBatchSize   = 32
+	checkpointRootDir  = "checkpoints"
+	checkpointRunsDir  = "runs"
+	checkpointGoMLXDir = "gomlx"
+	manifestFileName   = "manifest.json"
+	latestRunFileName  = "latest-run.txt"
 )
 
 func main() {
@@ -32,6 +35,7 @@ func main() {
 	logEvery := flags.Int("log-every", 50, "print training progress every n batches; 0 disables batch progress logs")
 	maxTrainBatches := flags.Int("max-train-batches", 0, "maximum training batches per epoch; 0 means all")
 	maxValidationBatches := flags.Int("max-validation-batches", 25, "maximum validation batches per evaluation; 0 means all")
+	resume := flags.Bool("resume", false, "resume from the latest checkpoint run")
 	flags.Usage = func() {
 		fmt.Fprintf(flags.Output(), "usage: %s [options] [data-root]\n", flags.Name())
 		flags.PrintDefaults()
@@ -55,6 +59,12 @@ func main() {
 	}
 	if len(args) == 1 {
 		dataRoot = args[0]
+	}
+
+	checkpoints, err := resolveCheckpointPaths(checkpointRootDir, *resume, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configure checkpoints: %v\n", err)
+		os.Exit(1)
 	}
 
 	fmt.Println("wordle backprop trainer starting")
@@ -109,7 +119,8 @@ func main() {
 
 	trainerConfig := training.DefaultPolicyTrainerConfig()
 	trainerConfig.LearningRate = *learningRate
-	trainerConfig.CheckpointDir = checkpointGoMLXDir
+	trainerConfig.CheckpointDir = checkpoints.GoMLXDir
+	trainerConfig.CheckpointMustLoad = checkpoints.Resume
 	policyTrainer, err := training.NewPolicyTrainer(vocab, trainerConfig)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "build GoMLX policy trainer: %v\n", err)
@@ -128,11 +139,15 @@ func main() {
 		*maxValidationBatches,
 	)
 	fmt.Printf(
-		"checkpoint: root=%q gomlx_dir=%q manifest=%q keep=%d loaded=%t latest=%q\n",
-		checkpointRootDir,
+		"checkpoint: root=%q run_id=%q run_dir=%q gomlx_dir=%q manifest=%q latest_run_file=%q keep=%d resume=%t loaded=%t latest=%q\n",
+		checkpoints.RootDir,
+		checkpoints.RunID,
+		checkpoints.RunDir,
 		policyTrainer.CheckpointDir,
-		checkpointManifestPath,
+		checkpoints.ManifestPath,
+		checkpoints.LatestRunPath,
 		policyTrainer.CheckpointKeep,
+		checkpoints.Resume,
 		policyTrainer.CheckpointLoaded,
 		policyTrainer.LatestCheckpoint,
 	)
@@ -183,12 +198,17 @@ func main() {
 			lastValidation,
 			validationDelta,
 			latestCheckpoint,
+			checkpoints,
 		)
-		if err := writeCheckpointManifest(checkpointManifestPath, manifest); err != nil {
+		if err := writeCheckpointManifest(checkpoints.ManifestPath, manifest); err != nil {
 			fmt.Fprintf(os.Stderr, "epoch %d checkpoint manifest: %v\n", epoch, err)
 			os.Exit(1)
 		}
-		fmt.Printf("checkpoint saved: epoch=%d global_step=%d latest=%q manifest=%q\n", epoch, policyTrainer.GlobalStep(), latestCheckpoint, checkpointManifestPath)
+		if err := writeLatestRunID(checkpoints.LatestRunPath, checkpoints.RunID); err != nil {
+			fmt.Fprintf(os.Stderr, "epoch %d checkpoint latest-run update: %v\n", epoch, err)
+			os.Exit(1)
+		}
+		fmt.Printf("checkpoint saved: epoch=%d global_step=%d latest=%q manifest=%q\n", epoch, policyTrainer.GlobalStep(), latestCheckpoint, checkpoints.ManifestPath)
 	}
 	fmt.Printf("training run complete: elapsed=%s\n", formatDuration(time.Since(runStarted)))
 }
@@ -206,9 +226,13 @@ type checkpointManifest struct {
 	Version                  int                     `json:"version"`
 	UpdatedAtUTC             string                  `json:"updated_at_utc"`
 	CheckpointRoot           string                  `json:"checkpoint_root"`
+	RunID                    string                  `json:"run_id"`
+	RunDir                   string                  `json:"run_dir"`
 	GoMLXDir                 string                  `json:"gomlx_dir"`
 	LatestGoMLXCheckpoint    string                  `json:"latest_gomlx_checkpoint"`
+	LatestRunFile            string                  `json:"latest_run_file"`
 	GoMLXCheckpointKeep      int                     `json:"gomlx_checkpoint_keep"`
+	Resume                   bool                    `json:"resume"`
 	EpochsCompletedThisRun   int                     `json:"epochs_completed_this_run"`
 	GlobalStep               int64                   `json:"global_step"`
 	DataRoot                 string                  `json:"data_root"`
@@ -257,6 +281,17 @@ type lossSummary struct {
 	SamplesPerSecond float64 `json:"samples_per_second"`
 }
 
+type checkpointPaths struct {
+	RootDir       string
+	RunsDir       string
+	RunID         string
+	RunDir        string
+	GoMLXDir      string
+	ManifestPath  string
+	LatestRunPath string
+	Resume        bool
+}
+
 func (stats *lossStats) Add(batch data.Batch, loss float64) {
 	if stats.Batches == 0 {
 		stats.First = loss
@@ -302,14 +337,19 @@ func buildCheckpointManifest(
 	lastValidation lossStats,
 	validationDelta float64,
 	latestCheckpoint string,
+	checkpoints checkpointPaths,
 ) checkpointManifest {
 	return checkpointManifest{
 		Version:                  1,
 		UpdatedAtUTC:             time.Now().UTC().Format(time.RFC3339Nano),
-		CheckpointRoot:           checkpointRootDir,
+		CheckpointRoot:           checkpoints.RootDir,
+		RunID:                    checkpoints.RunID,
+		RunDir:                   checkpoints.RunDir,
 		GoMLXDir:                 policyTrainer.CheckpointDir,
 		LatestGoMLXCheckpoint:    latestCheckpoint,
+		LatestRunFile:            checkpoints.LatestRunPath,
 		GoMLXCheckpointKeep:      policyTrainer.CheckpointKeep,
+		Resume:                   checkpoints.Resume,
 		EpochsCompletedThisRun:   epoch,
 		GlobalStep:               policyTrainer.GlobalStep(),
 		DataRoot:                 dataRoot,
@@ -330,6 +370,45 @@ func buildCheckpointManifest(
 		ValidationDeltaFromStart: finiteFloat(validationDelta),
 		VCS:                      vcsSettings(),
 	}
+}
+
+func resolveCheckpointPaths(rootDir string, resume bool, now time.Time) (checkpointPaths, error) {
+	paths := checkpointPaths{
+		RootDir:       rootDir,
+		RunsDir:       filepath.Join(rootDir, checkpointRunsDir),
+		LatestRunPath: filepath.Join(rootDir, latestRunFileName),
+		Resume:        resume,
+	}
+	if resume {
+		content, err := os.ReadFile(paths.LatestRunPath)
+		if err != nil {
+			return paths, fmt.Errorf("read latest run file %s: %w", paths.LatestRunPath, err)
+		}
+		paths.RunID = strings.TrimSpace(string(content))
+		if err := validateRunID(paths.RunID); err != nil {
+			return paths, fmt.Errorf("latest run file %s: %w", paths.LatestRunPath, err)
+		}
+	} else {
+		paths.RunID = fmt.Sprintf("run-%s", now.Format("20060102-150405.000000000"))
+	}
+
+	paths.RunDir = filepath.Join(paths.RunsDir, paths.RunID)
+	paths.GoMLXDir = filepath.Join(paths.RunDir, checkpointGoMLXDir)
+	paths.ManifestPath = filepath.Join(paths.RunDir, manifestFileName)
+	return paths, nil
+}
+
+func validateRunID(runID string) error {
+	if runID == "" {
+		return fmt.Errorf("run id is empty")
+	}
+	if runID == "." || runID == ".." {
+		return fmt.Errorf("run id %q is invalid", runID)
+	}
+	if runID != filepath.Base(runID) || strings.ContainsAny(runID, `/\`) {
+		return fmt.Errorf("run id %q must be a single path component", runID)
+	}
+	return nil
 }
 
 func summarizeSplits(splits map[data.SplitName]*data.Split) map[string]splitSummary {
@@ -406,6 +485,21 @@ func writeCheckpointManifest(path string, manifest checkpointManifest) error {
 	}
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, content, 0o660); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
+}
+
+func writeLatestRunID(path, runID string) error {
+	if err := validateRunID(runID); err != nil {
+		return err
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o770); err != nil {
+		return err
+	}
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(runID+"\n"), 0o660); err != nil {
 		return err
 	}
 	return os.Rename(tmpPath, path)

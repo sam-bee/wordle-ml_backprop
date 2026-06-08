@@ -212,4 +212,5 @@ the same trainer.
 The trainer disables GoMLX PJRT auto-installation in code and requires the CUDA backend to expose exactly one visible
 device. The system environment is responsible for masking CUDA visibility so that this one device is the RTX 5070 Ti.
 The CLI saves native GoMLX checkpoints after each completed epoch and writes a project manifest. Saved standalone model
-export is still intentionally not implemented.
+export is still intentionally not implemented. Checkpoint resume is opt-in with `--resume`; without it, the CLI starts a
+new checkpoint run directory.
