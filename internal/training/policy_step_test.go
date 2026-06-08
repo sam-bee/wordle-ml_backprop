@@ -68,6 +68,20 @@ func TestBatchTeacherTopKIndicesRejectsMissingWord(t *testing.T) {
 	}
 }
 
+func TestPolicyTrainerConfigValidation(t *testing.T) {
+	if err := DefaultPolicyTrainerConfig().Validate(); err != nil {
+		t.Fatalf("default config validation failed: %v", err)
+	}
+
+	for _, learningRate := range []float64{0, -0.1, math.NaN(), math.Inf(1)} {
+		config := DefaultPolicyTrainerConfig()
+		config.LearningRate = learningRate
+		if err := config.Validate(); err == nil {
+			t.Fatalf("Validate() with learning rate %v succeeded, want error", learningRate)
+		}
+	}
+}
+
 func TestRunPolicyStep(t *testing.T) {
 	vocab := trainingFixtureVocabulary(t)
 	result, err := RunPolicyStep(trainingFixtureBatch(t, 4), vocab)
@@ -79,6 +93,12 @@ func TestRunPolicyStep(t *testing.T) {
 	}
 	if !result.UpdateCompleted {
 		t.Fatal("UpdateCompleted = false, want true")
+	}
+	if !strings.Contains(result.BackendDescription, "cuda") {
+		t.Fatalf("BackendDescription = %q, want CUDA backend", result.BackendDescription)
+	}
+	if result.DeviceDescription == "" {
+		t.Fatal("DeviceDescription is empty")
 	}
 	for name, value := range map[string]float64{
 		"InitialLoss":    result.InitialLoss,

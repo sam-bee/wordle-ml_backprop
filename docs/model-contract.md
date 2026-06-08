@@ -177,7 +177,7 @@ The dense trunk is:
 Use ReLU after the 256-value layer and after the 128-value layer. Do not apply an activation to the final 64-value
 vector.
 
-## Policy Training Step
+## Policy Training
 
 `actionspace.Load` imports the 4,739-word action vocabulary from
 `github.com/sam-bee/wordle-ml_game-engine/words.GetActionSpace`. The loader preserves the game-engine order and builds a
@@ -196,7 +196,9 @@ vector.
 The fixed action features are model inputs, and the teacher top-k indices are labels consumed by `training.PolicyLoss`.
 If any teacher word is missing from the action vocabulary, conversion fails clearly.
 
-`training.RunPolicyStep` uses:
+`training.NewPolicyTrainer` builds one trainer and keeps the CUDA backend, GoMLX context, optimizer, model variables, and
+action vocabulary alive across batches. `training.RunPolicyStep` remains as a focused one-batch smoke helper built on
+the same trainer.
 
 | Component | Current choice |
 | --- | --- |
@@ -205,7 +207,8 @@ If any teacher word is missing from the action vocabulary, conversion fails clea
 | target | teacher top-16 action indices |
 | loss | `training.PolicyLoss` from `docs/loss-shaping.md` |
 | optimizer | SGD, learning rate `0.05`, no decay |
-| execution | initial eval loss, one train step, post-update eval loss |
+| execution | validation loss before training, one or more training epochs, validation loss after each epoch |
 
 The trainer disables GoMLX PJRT auto-installation in code and requires the CUDA backend to expose exactly one visible
 device. The system environment is responsible for masking CUDA visibility so that this one device is the RTX 5070 Ti.
+The current loop reports loss only; checkpointing and saved model export are still intentionally not implemented.

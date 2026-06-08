@@ -2,6 +2,7 @@ package training
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/gomlx/gomlx/backends"
@@ -18,10 +19,40 @@ import (
 )
 
 const (
-	policyLearningRate        = 0.05
+	DefaultPolicyLearningRate = 0.05
+	DefaultPolicySeed         = int64(1)
+
 	policyBackendConfig       = "cuda"
 	policyRequiredDeviceCount = 1
 )
+
+type PolicyTrainerConfig struct {
+	LearningRate float64
+	Seed         int64
+}
+
+func DefaultPolicyTrainerConfig() PolicyTrainerConfig {
+	return PolicyTrainerConfig{
+		LearningRate: DefaultPolicyLearningRate,
+		Seed:         DefaultPolicySeed,
+	}
+}
+
+func (config PolicyTrainerConfig) Validate() error {
+	if math.IsNaN(config.LearningRate) || math.IsInf(config.LearningRate, 0) || config.LearningRate <= 0 {
+		return fmt.Errorf("learning rate must be finite and > 0, got %v", config.LearningRate)
+	}
+	return nil
+}
+
+type PolicyTrainer struct {
+	vocab              actionspace.Vocabulary
+	backend            backends.Backend
+	trainer            *gomlxtrain.Trainer
+	ActionCount        int
+	BackendDescription string
+	DeviceDescription  string
+}
 
 type PolicyStepResult struct {
 	ActionCount        int
@@ -33,34 +64,34 @@ type PolicyStepResult struct {
 	UpdateCompleted    bool
 }
 
-func RunPolicyStep(batch data.Batch, vocab actionspace.Vocabulary) (PolicyStepResult, error) {
-	var result PolicyStepResult
-	if batch.Size() == 0 {
-		return result, fmt.Errorf("batch is empty")
-	}
+func NewPolicyTrainer(vocab actionspace.Vocabulary, config PolicyTrainerConfig) (*PolicyTrainer, error) {
 	if err := validateActionVocabulary(vocab); err != nil {
-		return result, err
+		return nil, err
+	}
+	if err := config.Validate(); err != nil {
+		return nil, err
 	}
 
 	backend, err := newPolicyBackend()
 	if err != nil {
-		return result, err
+		return nil, err
 	}
-	defer backend.Finalize()
 
 	ctx := context.New()
-	if err := ctx.SetRNGStateFromSeed(1); err != nil {
-		return result, fmt.Errorf("seed GoMLX context: %w", err)
+	if err := ctx.SetRNGStateFromSeed(config.Seed); err != nil {
+		backend.Finalize()
+		return nil, fmt.Errorf("seed GoMLX context: %w", err)
 	}
 	if err := model.ConfigureRandomInitialization(ctx, model.DefaultRandomInitializationConfig()); err != nil {
-		return result, fmt.Errorf("configure random initialization: %w", err)
+		backend.Finalize()
+		return nil, fmt.Errorf("configure random initialization: %w", err)
 	}
 
 	optimizer := optimizers.StochasticGradientDescent().
-		WithLearningRate(policyLearningRate).
+		WithLearningRate(config.LearningRate).
 		WithDecay(false).
 		Done()
-	trainer := gomlxtrain.NewTrainer(
+	gomlxTrainer := gomlxtrain.NewTrainer(
 		backend,
 		ctx,
 		model.PolicyModel,
@@ -70,22 +101,66 @@ func RunPolicyStep(batch data.Batch, vocab actionspace.Vocabulary) (PolicyStepRe
 		nil,
 	)
 
-	initialLoss, err := evalPolicyLoss(trainer, batch, vocab)
+	return &PolicyTrainer{
+		vocab:              vocab,
+		backend:            backend,
+		trainer:            gomlxTrainer,
+		ActionCount:        len(vocab.Words),
+		BackendDescription: backend.Description(),
+		DeviceDescription:  backend.DeviceDescription(0),
+	}, nil
+}
+
+func (trainer *PolicyTrainer) Close() {
+	if trainer == nil || trainer.backend == nil {
+		return
+	}
+	trainer.backend.Finalize()
+	trainer.backend = nil
+}
+
+func (trainer *PolicyTrainer) TrainBatch(batch data.Batch) (float64, error) {
+	if trainer == nil || trainer.trainer == nil {
+		return 0, fmt.Errorf("policy trainer is nil")
+	}
+	return trainPolicyLoss(trainer.trainer, batch, trainer.vocab)
+}
+
+func (trainer *PolicyTrainer) EvalBatch(batch data.Batch) (float64, error) {
+	if trainer == nil || trainer.trainer == nil {
+		return 0, fmt.Errorf("policy trainer is nil")
+	}
+	return evalPolicyLoss(trainer.trainer, batch, trainer.vocab)
+}
+
+func RunPolicyStep(batch data.Batch, vocab actionspace.Vocabulary) (PolicyStepResult, error) {
+	var result PolicyStepResult
+	if batch.Size() == 0 {
+		return result, fmt.Errorf("batch is empty")
+	}
+
+	trainer, err := NewPolicyTrainer(vocab, DefaultPolicyTrainerConfig())
+	if err != nil {
+		return result, err
+	}
+	defer trainer.Close()
+
+	initialLoss, err := trainer.EvalBatch(batch)
 	if err != nil {
 		return result, fmt.Errorf("initial eval: %w", err)
 	}
-	trainingLoss, err := trainPolicyLoss(trainer, batch, vocab)
+	trainingLoss, err := trainer.TrainBatch(batch)
 	if err != nil {
 		return result, fmt.Errorf("train step: %w", err)
 	}
-	postUpdateLoss, err := evalPolicyLoss(trainer, batch, vocab)
+	postUpdateLoss, err := trainer.EvalBatch(batch)
 	if err != nil {
 		return result, fmt.Errorf("post-update eval: %w", err)
 	}
 
-	result.ActionCount = len(vocab.Words)
-	result.BackendDescription = backend.Description()
-	result.DeviceDescription = backend.DeviceDescription(0)
+	result.ActionCount = trainer.ActionCount
+	result.BackendDescription = trainer.BackendDescription
+	result.DeviceDescription = trainer.DeviceDescription
 	result.InitialLoss = initialLoss
 	result.TrainingLoss = trainingLoss
 	result.PostUpdateLoss = postUpdateLoss
