@@ -7,6 +7,7 @@ checkpoints/
   .gitkeep
   latest-run.txt
   runs/
+    .gitkeep
     run-20260608-062617.123456789/
       manifest.json
       gomlx/
@@ -33,5 +34,5 @@ When a checkpoint is saved, `checkpoints/latest-run.txt` is updated to the curre
 that run if `--resume` is present. Without `--resume`, existing checkpoint files are ignored and a new run directory is
 created.
 
-The repository ignores generated checkpoint contents. Only `checkpoints/.gitkeep` is tracked so the output directory
-exists in a fresh checkout.
+The repository ignores generated checkpoint and telemetry contents. `checkpoints/.gitkeep` and
+`checkpoints/runs/.gitkeep` are tracked so the output directories exist in a fresh checkout.

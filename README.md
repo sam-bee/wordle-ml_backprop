@@ -5,15 +5,18 @@ This project trains a Wordle neural network using GoMLX.
 The goal is to use supervised backpropagation to make a model imitate pre-generated teacher data. The training data
 contains incomplete Wordle game states and target outputs produced by a stronger teacher system.
 
-## Initial Goals
+## Current Status
 
-1. Create a minimal Go project under `backprop`.
-2. Add GoMLX as the machine learning library.
-3. Load the synthetic training, validation, and test data.
-4. Define a neural network matching the intended Wordle model shape closely enough for supervised learning.
-5. Train the model with backpropagation.
-6. Report training and validation loss during training.
-7. Save enough model state that future work can inspect or reuse the trained model.
+The project currently:
+
+1. Loads the synthetic training, validation, and test data.
+2. Defines the intended Wordle policy model in GoMLX.
+3. Trains the model with supervised backpropagation.
+4. Reports training and validation loss during training.
+5. Saves native GoMLX checkpoints plus a project manifest.
+6. Provides a small play CLI for inspecting checkpoint-backed policy choices.
+7. Provides a Dockerized TensorBoard container with a dummy telemetry run; real training-to-TensorBoard event writing is
+   still a follow-up.
 
 ## Non-Goals For Now
 
@@ -26,25 +29,24 @@ This phase does not need to:
 
 Those are later phases.
 
-## Expected Project Shape
+## Project Shape
 
-The project should begin with a simple structure like:
+The current high-level structure is:
 
 ```text
 backprop/
   README.md
   go.mod
   cmd/
+    play/
     train/
-      main.go
+  docker/
+  docs/
   internal/
     data/
     model/
     training/
 ```
-
-This structure can change if GoMLX examples suggest a better local convention, but the first implementation should stay
-small and easy to understand.
 
 ## Training Data
 
@@ -59,27 +61,17 @@ data/
   test/
 ```
 
-Each split should contain structured records representing incomplete Wordle game states and the teacher output for that
-state.
-
-The exact file format may be binary with JSON metadata. The training code should avoid hard-coding assumptions that make
-it difficult to update the data format later.
+Each split contains fixed-width binary records plus JSON metadata. See `docs/training-data-format.md`.
 
 ## Model
 
-The model should be implemented in Go using GoMLX.
+The model is implemented in Go using GoMLX.
 
-The starting point should be a straightforward supervised model, not a reinforcement learning system.
+The training setup is a straightforward supervised model, not a reinforcement learning system.
 
-The model should accept an encoded incomplete Wordle game state and produce an output suitable for imitating the
-teacher. The first version may use a simplified output target if that gets the training loop working sooner.
+The model accepts an encoded incomplete Wordle game state and produces action logits for imitating the teacher's ranked
+next-guess choices. See `docs/model-contract.md`.
 
 ## Development Principle
 
 Prefer a small working training loop over a large incomplete architecture.
-
-The first milestone is:
-
-> load a small batch, run a forward pass, compute a loss, and update the model parameters.
-
-Once that works, the architecture, data loading, metrics, and persistence can be improved incrementally.
