@@ -32,6 +32,7 @@ func main() {
 	batchSize := flags.Int("batch-size", defaultBatchSize, "number of samples per sequential batch")
 	epochs := flags.Int("epochs", 1, "number of training epochs")
 	learningRate := flags.Float64("learning-rate", training.DefaultPolicyLearningRate, "SGD learning rate")
+	learningRateDecay := flags.Bool("learning-rate-decay", false, "enable GoMLX SGD decay: effective learning rate is initial learning rate / sqrt(global_step)")
 	logEvery := flags.Int("log-every", 50, "print training progress every n batches; 0 disables batch progress logs")
 	maxTrainBatches := flags.Int("max-train-batches", 0, "maximum training batches per epoch; 0 means all")
 	maxValidationBatches := flags.Int("max-validation-batches", 25, "maximum validation batches per evaluation; 0 means all")
@@ -119,6 +120,7 @@ func main() {
 
 	trainerConfig := training.DefaultPolicyTrainerConfig()
 	trainerConfig.LearningRate = *learningRate
+	trainerConfig.LearningRateDecay = *learningRateDecay
 	trainerConfig.CheckpointDir = checkpoints.GoMLXDir
 	trainerConfig.CheckpointMustLoad = checkpoints.Resume
 	policyTrainer, err := training.NewPolicyTrainer(vocab, trainerConfig)
@@ -128,11 +130,13 @@ func main() {
 	}
 	defer policyTrainer.Close()
 	fmt.Printf(
-		"trainer: action_count=%d backend=%q device=%q learning_rate=%g rng_seed=%d epochs=%d max_train_batches=%d max_validation_batches=%d\n",
+		"trainer: action_count=%d backend=%q device=%q learning_rate=%g learning_rate_decay=%t next_learning_rate=%g rng_seed=%d epochs=%d max_train_batches=%d max_validation_batches=%d\n",
 		policyTrainer.ActionCount,
 		policyTrainer.BackendDescription,
 		policyTrainer.DeviceDescription,
 		*learningRate,
+		*learningRateDecay,
+		policyTrainer.NextLearningRate(),
 		policyTrainer.Seed,
 		*epochs,
 		*maxTrainBatches,
@@ -191,6 +195,7 @@ func main() {
 			epoch,
 			*batchSize,
 			*learningRate,
+			*learningRateDecay,
 			*maxTrainBatches,
 			*maxValidationBatches,
 			initialValidation,
@@ -243,6 +248,7 @@ type checkpointManifest struct {
 	Backend                  string                  `json:"backend"`
 	Device                   string                  `json:"device"`
 	LearningRate             float64                 `json:"learning_rate"`
+	LearningRateDecay        bool                    `json:"learning_rate_decay"`
 	RNGSeed                  int64                   `json:"rng_seed"`
 	BatchSize                int                     `json:"batch_size"`
 	MaxTrainBatches          int                     `json:"max_train_batches"`
@@ -330,6 +336,7 @@ func buildCheckpointManifest(
 	epoch int,
 	batchSize int,
 	learningRate float64,
+	learningRateDecay bool,
 	maxTrainBatches int,
 	maxValidationBatches int,
 	initialValidation lossStats,
@@ -360,6 +367,7 @@ func buildCheckpointManifest(
 		Backend:                  policyTrainer.BackendDescription,
 		Device:                   policyTrainer.DeviceDescription,
 		LearningRate:             learningRate,
+		LearningRateDecay:        learningRateDecay,
 		RNGSeed:                  policyTrainer.Seed,
 		BatchSize:                batchSize,
 		MaxTrainBatches:          maxTrainBatches,

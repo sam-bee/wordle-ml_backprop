@@ -82,6 +82,20 @@ func TestPolicyTrainerConfigValidation(t *testing.T) {
 	}
 }
 
+func TestPolicyLearningRateForStep(t *testing.T) {
+	const learningRate = 0.05
+
+	if got := policyLearningRateForStep(learningRate, false, 100); got != learningRate {
+		t.Fatalf("fixed learning rate = %g, want %g", got, learningRate)
+	}
+	if got := policyLearningRateForStep(learningRate, true, 0); got != learningRate {
+		t.Fatalf("decayed learning rate at step 0 = %g, want %g", got, learningRate)
+	}
+	if got := policyLearningRateForStep(learningRate, true, 4); math.Abs(got-0.025) > 1e-12 {
+		t.Fatalf("decayed learning rate at step 4 = %g, want 0.025", got)
+	}
+}
+
 func TestRunPolicyStep(t *testing.T) {
 	vocab := trainingFixtureVocabulary(t)
 	result, err := RunPolicyStep(trainingFixtureBatch(t, 4), vocab)

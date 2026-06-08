@@ -26,6 +26,9 @@ trainer keeps the latest three GoMLX checkpoints within a run.
 latest GoMLX checkpoint name, global step, split summaries, action vocabulary source, trainer configuration,
 backend/device description, loss summaries, and VCS settings when available.
 
+The trainer configuration includes the initial learning rate and whether GoMLX SGD learning-rate decay was enabled for
+the run.
+
 When a checkpoint is saved, `checkpoints/latest-run.txt` is updated to the current run id. A later command only resumes
 that run if `--resume` is present. Without `--resume`, existing checkpoint files are ignored and a new run directory is
 created.

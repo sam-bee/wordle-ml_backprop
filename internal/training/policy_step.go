@@ -30,6 +30,7 @@ const (
 
 type PolicyTrainerConfig struct {
 	LearningRate       float64
+	LearningRateDecay  bool
 	Seed               int64
 	CheckpointDir      string
 	CheckpointKeep     int
@@ -74,6 +75,8 @@ type PolicyTrainer struct {
 	CheckpointKeep     int
 	CheckpointLoaded   bool
 	LatestCheckpoint   string
+	LearningRate       float64
+	LearningRateDecay  bool
 }
 
 type PolicyStepResult struct {
@@ -149,7 +152,7 @@ func NewPolicyTrainer(vocab actionspace.Vocabulary, config PolicyTrainerConfig) 
 
 	optimizer := optimizers.StochasticGradientDescent().
 		WithLearningRate(config.LearningRate).
-		WithDecay(false).
+		WithDecay(config.LearningRateDecay).
 		Done()
 	gomlxTrainer := gomlxtrain.NewTrainer(
 		backend,
@@ -174,6 +177,8 @@ func NewPolicyTrainer(vocab actionspace.Vocabulary, config PolicyTrainerConfig) 
 		CheckpointKeep:     config.CheckpointKeep,
 		CheckpointLoaded:   checkpointLoaded,
 		LatestCheckpoint:   latestCheckpoint,
+		LearningRate:       config.LearningRate,
+		LearningRateDecay:  config.LearningRateDecay,
 	}, nil
 }
 
@@ -204,6 +209,23 @@ func (trainer *PolicyTrainer) GlobalStep() int64 {
 		return 0
 	}
 	return trainer.trainer.GlobalStep()
+}
+
+func (trainer *PolicyTrainer) NextLearningRate() float64 {
+	if trainer == nil {
+		return math.NaN()
+	}
+	return policyLearningRateForStep(trainer.LearningRate, trainer.LearningRateDecay, trainer.GlobalStep()+1)
+}
+
+func policyLearningRateForStep(initialLearningRate float64, decay bool, globalStep int64) float64 {
+	if !decay {
+		return initialLearningRate
+	}
+	if globalStep < 1 {
+		globalStep = 1
+	}
+	return initialLearningRate / math.Sqrt(float64(globalStep))
 }
 
 func (trainer *PolicyTrainer) SaveCheckpoint() (string, error) {

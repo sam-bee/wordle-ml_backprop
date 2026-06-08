@@ -206,11 +206,13 @@ the same trainer.
 | model | `model.PolicyModel` |
 | target | teacher top-16 action indices |
 | loss | `training.PolicyLoss` from `docs/loss-shaping.md` |
-| optimizer | SGD, learning rate `0.05`, no decay |
+| optimizer | SGD, initial learning rate `0.05` by default, optional GoMLX decay with `--learning-rate-decay` |
 | execution | validation loss before training, one or more training epochs, validation loss after each epoch |
 
-The trainer disables GoMLX PJRT auto-installation in code and requires the CUDA backend to expose exactly one visible
-device. The system environment is responsible for masking CUDA visibility so that this one device is the RTX 5070 Ti.
+When `--learning-rate-decay` is enabled, GoMLX SGD uses `initial_learning_rate / sqrt(global_step)`. The first update
+uses the configured initial learning rate. The trainer disables GoMLX PJRT auto-installation in code and requires the
+CUDA backend to expose exactly one visible device. The system environment is responsible for masking CUDA visibility so
+that this one device is the RTX 5070 Ti.
 The CLI saves native GoMLX checkpoints after each completed epoch and writes a project manifest. Saved standalone model
 export is still intentionally not implemented. Checkpoint resume is opt-in with `--resume`; without it, the CLI starts a
 new checkpoint run directory.
