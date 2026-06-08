@@ -43,7 +43,7 @@ Each `.bin` file starts with a 64-byte header.
 | 8 | 4 | `uint32` | `record_count` | Number of records following the header |
 | 12 | 4 | `uint32` | `top_k` | `16` |
 | 16 | 4 | `uint32` | `max_turns` | `5` |
-| 20 | 4 | `uint32` | `guess_vocab_size` | `12947` |
+| 20 | 4 | `uint32` | `guess_vocab_size` | `4739` |
 | 24 | 4 | `uint32` | `solution_count` | Number of split solutions in this file |
 | 28 | 4 | `uint32` | `split_id` | `1` train, `2` validation, `3` test |
 | 32 | 32 | bytes | reserved | All zero bytes |
@@ -189,7 +189,7 @@ Important sidecar fields:
 | `record_size_bytes` | `234` |
 | `top_k` | `16` |
 | `max_turns` | `5` |
-| `guess_vocab_size` | `12947` |
+| `guess_vocab_size` | `4739` |
 | `global_solution_vocab_size` | `2309` |
 | `solution_count` | Number of hidden solution words assigned to the split |
 | `solution_ids` | Sorted external solution-word indices for the split |

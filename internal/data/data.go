@@ -23,7 +23,7 @@ const (
 	MaxTurns   = 5
 	TopK       = 16
 
-	GuessVocabSize          = 12947
+	GuessVocabSize          = 4739
 	GlobalSolutionVocabSize = 2309
 	RecordsPerSolution      = 25
 	RecordsPerDepth         = 5
