@@ -178,9 +178,9 @@ This is only a distributional expectation, not an enforced value.
 
 ## Later Action-Space Growth
 
-The code does perform magnitude matching for output-embedding tails when new action rows are injected later during GA
-action-space growth. This is not part of initial random model creation, but a reimplementation that supports action-space
-growth should implement it.
+Action-space growth is not part of initial random model creation and is not implemented in this GoMLX project yet. A
+future implementation that injects new action rows during GA action-space growth should use magnitude matching for the
+new output-embedding tail rows.
 
 For each child genome being grown from `parent_action_count` rows to a larger action count:
 
