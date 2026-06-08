@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
 	"github.com/sam-bee/wordle-ml_backprop/internal/actionspace"
@@ -14,7 +16,12 @@ import (
 	"github.com/sam-bee/wordle-ml_backprop/internal/training"
 )
 
-const defaultBatchSize = 32
+const (
+	defaultBatchSize       = 32
+	checkpointRootDir      = "checkpoints"
+	checkpointGoMLXDir     = "checkpoints/gomlx"
+	checkpointManifestPath = "checkpoints/manifest.json"
+)
 
 func main() {
 	flags := flag.NewFlagSet(filepath.Base(os.Args[0]), flag.ContinueOnError)
@@ -102,6 +109,7 @@ func main() {
 
 	trainerConfig := training.DefaultPolicyTrainerConfig()
 	trainerConfig.LearningRate = *learningRate
+	trainerConfig.CheckpointDir = checkpointGoMLXDir
 	policyTrainer, err := training.NewPolicyTrainer(vocab, trainerConfig)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "build GoMLX policy trainer: %v\n", err)
@@ -118,6 +126,15 @@ func main() {
 		*epochs,
 		*maxTrainBatches,
 		*maxValidationBatches,
+	)
+	fmt.Printf(
+		"checkpoint: root=%q gomlx_dir=%q manifest=%q keep=%d loaded=%t latest=%q\n",
+		checkpointRootDir,
+		policyTrainer.CheckpointDir,
+		checkpointManifestPath,
+		policyTrainer.CheckpointKeep,
+		policyTrainer.CheckpointLoaded,
+		policyTrainer.LatestCheckpoint,
 	)
 
 	runStarted := time.Now()
@@ -144,7 +161,34 @@ func main() {
 			os.Exit(1)
 		}
 		printLossStats(fmt.Sprintf("epoch %d validation summary", epoch), lastValidation)
-		fmt.Printf("epoch %d validation_delta_from_start=%.6f\n", epoch, lastValidation.MeanLoss()-initialValidation.MeanLoss())
+		validationDelta := lastValidation.MeanLoss() - initialValidation.MeanLoss()
+		fmt.Printf("epoch %d validation_delta_from_start=%.6f\n", epoch, validationDelta)
+
+		latestCheckpoint, err := policyTrainer.SaveCheckpoint()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "epoch %d checkpoint save: %v\n", epoch, err)
+			os.Exit(1)
+		}
+		manifest := buildCheckpointManifest(
+			dataRoot,
+			splits,
+			policyTrainer,
+			epoch,
+			*batchSize,
+			*learningRate,
+			*maxTrainBatches,
+			*maxValidationBatches,
+			initialValidation,
+			trainStats,
+			lastValidation,
+			validationDelta,
+			latestCheckpoint,
+		)
+		if err := writeCheckpointManifest(checkpointManifestPath, manifest); err != nil {
+			fmt.Fprintf(os.Stderr, "epoch %d checkpoint manifest: %v\n", epoch, err)
+			os.Exit(1)
+		}
+		fmt.Printf("checkpoint saved: epoch=%d global_step=%d latest=%q manifest=%q\n", epoch, policyTrainer.GlobalStep(), latestCheckpoint, checkpointManifestPath)
 	}
 	fmt.Printf("training run complete: elapsed=%s\n", formatDuration(time.Since(runStarted)))
 }
@@ -156,6 +200,61 @@ type lossStats struct {
 	First   float64
 	Last    float64
 	Elapsed time.Duration
+}
+
+type checkpointManifest struct {
+	Version                  int                     `json:"version"`
+	UpdatedAtUTC             string                  `json:"updated_at_utc"`
+	CheckpointRoot           string                  `json:"checkpoint_root"`
+	GoMLXDir                 string                  `json:"gomlx_dir"`
+	LatestGoMLXCheckpoint    string                  `json:"latest_gomlx_checkpoint"`
+	GoMLXCheckpointKeep      int                     `json:"gomlx_checkpoint_keep"`
+	EpochsCompletedThisRun   int                     `json:"epochs_completed_this_run"`
+	GlobalStep               int64                   `json:"global_step"`
+	DataRoot                 string                  `json:"data_root"`
+	Splits                   map[string]splitSummary `json:"splits"`
+	ActionVocabularySource   string                  `json:"action_vocabulary_source"`
+	ActionCount              int                     `json:"action_count"`
+	FixedActionFeatureDim    int                     `json:"fixed_action_feature_dim"`
+	Backend                  string                  `json:"backend"`
+	Device                   string                  `json:"device"`
+	LearningRate             float64                 `json:"learning_rate"`
+	RNGSeed                  int64                   `json:"rng_seed"`
+	BatchSize                int                     `json:"batch_size"`
+	MaxTrainBatches          int                     `json:"max_train_batches"`
+	MaxValidationBatches     int                     `json:"max_validation_batches"`
+	InitialValidation        lossSummary             `json:"initial_validation"`
+	LastTrain                lossSummary             `json:"last_train"`
+	LastValidation           lossSummary             `json:"last_validation"`
+	ValidationDeltaFromStart float64                 `json:"validation_delta_from_start"`
+	VCS                      map[string]string       `json:"vcs,omitempty"`
+}
+
+type splitSummary struct {
+	Samples                   int    `json:"samples"`
+	Solutions                 uint32 `json:"solutions"`
+	TopK                      uint32 `json:"top_k"`
+	MaxTurns                  uint32 `json:"max_turns"`
+	GuessVocabSize            uint32 `json:"guess_vocab_size"`
+	GlobalSolutionVocabSize   uint32 `json:"global_solution_vocab_size"`
+	RecordSizeBytes           uint32 `json:"record_size_bytes"`
+	WordlistHash              string `json:"wordlist_hash"`
+	GeneratorCommit           string `json:"generator_commit"`
+	GeneratorWorkingTreeDirty bool   `json:"generator_working_tree_dirty"`
+	GeneratedAtUTC            string `json:"generated_at_utc"`
+	DatasetSeed               int64  `json:"dataset_seed"`
+}
+
+type lossSummary struct {
+	Batches          int     `json:"batches"`
+	Samples          int     `json:"samples"`
+	FirstLoss        float64 `json:"first_loss"`
+	LastLoss         float64 `json:"last_loss"`
+	MeanLoss         float64 `json:"mean_loss"`
+	Elapsed          string  `json:"elapsed"`
+	ElapsedMillis    int64   `json:"elapsed_millis"`
+	BatchesPerSecond float64 `json:"batches_per_second"`
+	SamplesPerSecond float64 `json:"samples_per_second"`
 }
 
 func (stats *lossStats) Add(batch data.Batch, loss float64) {
@@ -187,6 +286,129 @@ func (stats lossStats) SamplesPerSecond() float64 {
 		return math.NaN()
 	}
 	return float64(stats.Samples) / stats.Elapsed.Seconds()
+}
+
+func buildCheckpointManifest(
+	dataRoot string,
+	splits map[data.SplitName]*data.Split,
+	policyTrainer *training.PolicyTrainer,
+	epoch int,
+	batchSize int,
+	learningRate float64,
+	maxTrainBatches int,
+	maxValidationBatches int,
+	initialValidation lossStats,
+	lastTrain lossStats,
+	lastValidation lossStats,
+	validationDelta float64,
+	latestCheckpoint string,
+) checkpointManifest {
+	return checkpointManifest{
+		Version:                  1,
+		UpdatedAtUTC:             time.Now().UTC().Format(time.RFC3339Nano),
+		CheckpointRoot:           checkpointRootDir,
+		GoMLXDir:                 policyTrainer.CheckpointDir,
+		LatestGoMLXCheckpoint:    latestCheckpoint,
+		GoMLXCheckpointKeep:      policyTrainer.CheckpointKeep,
+		EpochsCompletedThisRun:   epoch,
+		GlobalStep:               policyTrainer.GlobalStep(),
+		DataRoot:                 dataRoot,
+		Splits:                   summarizeSplits(splits),
+		ActionVocabularySource:   "github.com/sam-bee/wordle-ml_game-engine/words.GetActionSpace",
+		ActionCount:              policyTrainer.ActionCount,
+		FixedActionFeatureDim:    model.FixedActionFeatureDim,
+		Backend:                  policyTrainer.BackendDescription,
+		Device:                   policyTrainer.DeviceDescription,
+		LearningRate:             learningRate,
+		RNGSeed:                  policyTrainer.Seed,
+		BatchSize:                batchSize,
+		MaxTrainBatches:          maxTrainBatches,
+		MaxValidationBatches:     maxValidationBatches,
+		InitialValidation:        summarizeLoss(initialValidation),
+		LastTrain:                summarizeLoss(lastTrain),
+		LastValidation:           summarizeLoss(lastValidation),
+		ValidationDeltaFromStart: finiteFloat(validationDelta),
+		VCS:                      vcsSettings(),
+	}
+}
+
+func summarizeSplits(splits map[data.SplitName]*data.Split) map[string]splitSummary {
+	summaries := make(map[string]splitSummary, len(splits))
+	for splitName, split := range splits {
+		metadata := split.Metadata
+		summaries[string(splitName)] = splitSummary{
+			Samples:                   split.SampleCount(),
+			Solutions:                 metadata.SolutionCount,
+			TopK:                      metadata.TopK,
+			MaxTurns:                  metadata.MaxTurns,
+			GuessVocabSize:            metadata.GuessVocabSize,
+			GlobalSolutionVocabSize:   metadata.GlobalSolutionVocabSize,
+			RecordSizeBytes:           metadata.RecordSizeBytes,
+			WordlistHash:              metadata.WordlistHash,
+			GeneratorCommit:           metadata.GeneratorCommit,
+			GeneratorWorkingTreeDirty: metadata.GeneratorWorkingTreeDirty,
+			GeneratedAtUTC:            metadata.GeneratedAtUTC,
+			DatasetSeed:               metadata.Seed,
+		}
+	}
+	return summaries
+}
+
+func summarizeLoss(stats lossStats) lossSummary {
+	return lossSummary{
+		Batches:          stats.Batches,
+		Samples:          stats.Samples,
+		FirstLoss:        finiteFloat(stats.First),
+		LastLoss:         finiteFloat(stats.Last),
+		MeanLoss:         finiteFloat(stats.MeanLoss()),
+		Elapsed:          formatDuration(stats.Elapsed),
+		ElapsedMillis:    stats.Elapsed.Milliseconds(),
+		BatchesPerSecond: finiteFloat(stats.BatchesPerSecond()),
+		SamplesPerSecond: finiteFloat(stats.SamplesPerSecond()),
+	}
+}
+
+func finiteFloat(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
+	return value
+}
+
+func vcsSettings() map[string]string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return nil
+	}
+	settings := make(map[string]string)
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision", "vcs.time", "vcs.modified":
+			settings[setting.Key] = setting.Value
+		}
+	}
+	if len(settings) == 0 {
+		return nil
+	}
+	return settings
+}
+
+func writeCheckpointManifest(path string, manifest checkpointManifest) error {
+	content, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	content = append(content, '\n')
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o770); err != nil {
+		return err
+	}
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, content, 0o660); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 func trainEpoch(policyTrainer *training.PolicyTrainer, split *data.Split, batchSize, maxBatches, logEvery, epoch int) (lossStats, error) {

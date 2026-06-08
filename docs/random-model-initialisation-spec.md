@@ -268,5 +268,5 @@ The GoMLX implementation exposes these rules in `internal/model`:
 - The trainable output tail uses `Normal(0, output_embedding_tail_stddev)`.
 - `FixedActionFeatures` and `FixedActionFeatureMatrix` build the fixed 26-value action feature prefix.
 
-The current project has no model persistence layer yet, so GoMLX variables are initialized in the graph variable dtype.
-The fp16 storage rule above belongs to the future persistence/checkpointing implementation.
+The current project persists model state through native GoMLX checkpoints, so GoMLX variables are initialized and saved in
+the graph variable dtype. The fp16 storage rule above belongs to a future custom export format if one is needed.

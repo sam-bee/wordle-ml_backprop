@@ -11,6 +11,7 @@ import (
 	"github.com/gomlx/gomlx/pkg/core/dtypes"
 	"github.com/gomlx/gomlx/pkg/core/tensors"
 	"github.com/gomlx/gomlx/pkg/ml/context"
+	"github.com/gomlx/gomlx/pkg/ml/context/checkpoints"
 	gomlxtrain "github.com/gomlx/gomlx/pkg/ml/train"
 	"github.com/gomlx/gomlx/pkg/ml/train/optimizers"
 
@@ -21,20 +22,24 @@ import (
 
 const (
 	DefaultPolicyLearningRate = 0.05
+	DefaultCheckpointKeep     = 3
 
 	policyBackendConfig       = "cuda"
 	policyRequiredDeviceCount = 1
 )
 
 type PolicyTrainerConfig struct {
-	LearningRate float64
-	Seed         int64
+	LearningRate   float64
+	Seed           int64
+	CheckpointDir  string
+	CheckpointKeep int
 }
 
 func DefaultPolicyTrainerConfig() PolicyTrainerConfig {
 	return PolicyTrainerConfig{
-		LearningRate: DefaultPolicyLearningRate,
-		Seed:         NewPolicySeed(),
+		LearningRate:   DefaultPolicyLearningRate,
+		Seed:           NewPolicySeed(),
+		CheckpointKeep: DefaultCheckpointKeep,
 	}
 }
 
@@ -46,6 +51,9 @@ func (config PolicyTrainerConfig) Validate() error {
 	if math.IsNaN(config.LearningRate) || math.IsInf(config.LearningRate, 0) || config.LearningRate <= 0 {
 		return fmt.Errorf("learning rate must be finite and > 0, got %v", config.LearningRate)
 	}
+	if config.CheckpointDir != "" && config.CheckpointKeep < -1 {
+		return fmt.Errorf("checkpoint keep must be -1 or >= 0, got %d", config.CheckpointKeep)
+	}
 	return nil
 }
 
@@ -53,10 +61,15 @@ type PolicyTrainer struct {
 	vocab              actionspace.Vocabulary
 	backend            backends.Backend
 	trainer            *gomlxtrain.Trainer
+	checkpoint         *checkpoints.Handler
 	ActionCount        int
 	BackendDescription string
 	DeviceDescription  string
 	Seed               int64
+	CheckpointDir      string
+	CheckpointKeep     int
+	CheckpointLoaded   bool
+	LatestCheckpoint   string
 }
 
 type PolicyStepResult struct {
@@ -80,6 +93,9 @@ func NewPolicyTrainer(vocab actionspace.Vocabulary, config PolicyTrainerConfig) 
 	if config.Seed == 0 {
 		config.Seed = NewPolicySeed()
 	}
+	if config.CheckpointDir != "" && config.CheckpointKeep == 0 {
+		config.CheckpointKeep = DefaultCheckpointKeep
+	}
 
 	backend, err := newPolicyBackend()
 	if err != nil {
@@ -96,13 +112,41 @@ func NewPolicyTrainer(vocab actionspace.Vocabulary, config PolicyTrainerConfig) 
 		return nil, fmt.Errorf("configure random initialization: %w", err)
 	}
 
+	var checkpoint *checkpoints.Handler
+	checkpointLoaded := false
+	latestCheckpoint := ""
+	if config.CheckpointDir != "" {
+		checkpoint, err = checkpoints.Build(ctx).
+			Dir(config.CheckpointDir).
+			Keep(config.CheckpointKeep).
+			Done()
+		if err != nil {
+			backend.Finalize()
+			return nil, fmt.Errorf("configure checkpoints: %w", err)
+		}
+		names, err := checkpoint.ListCheckpoints()
+		if err != nil {
+			backend.Finalize()
+			return nil, fmt.Errorf("list checkpoints: %w", err)
+		}
+		if len(names) > 0 {
+			checkpointLoaded = true
+			latestCheckpoint = names[len(names)-1]
+		}
+	}
+
+	trainerCtx := ctx
+	if checkpointLoaded {
+		trainerCtx = ctx.Reuse()
+	}
+
 	optimizer := optimizers.StochasticGradientDescent().
 		WithLearningRate(config.LearningRate).
 		WithDecay(false).
 		Done()
 	gomlxTrainer := gomlxtrain.NewTrainer(
 		backend,
-		ctx,
+		trainerCtx,
 		model.PolicyModel,
 		PolicyLoss,
 		optimizer,
@@ -114,10 +158,15 @@ func NewPolicyTrainer(vocab actionspace.Vocabulary, config PolicyTrainerConfig) 
 		vocab:              vocab,
 		backend:            backend,
 		trainer:            gomlxTrainer,
+		checkpoint:         checkpoint,
 		ActionCount:        len(vocab.Words),
 		BackendDescription: backend.Description(),
 		DeviceDescription:  backend.DeviceDescription(0),
 		Seed:               config.Seed,
+		CheckpointDir:      config.CheckpointDir,
+		CheckpointKeep:     config.CheckpointKeep,
+		CheckpointLoaded:   checkpointLoaded,
+		LatestCheckpoint:   latestCheckpoint,
 	}, nil
 }
 
@@ -141,6 +190,34 @@ func (trainer *PolicyTrainer) EvalBatch(batch data.Batch) (float64, error) {
 		return 0, fmt.Errorf("policy trainer is nil")
 	}
 	return evalPolicyLoss(trainer.trainer, batch, trainer.vocab)
+}
+
+func (trainer *PolicyTrainer) GlobalStep() int64 {
+	if trainer == nil || trainer.trainer == nil {
+		return 0
+	}
+	return trainer.trainer.GlobalStep()
+}
+
+func (trainer *PolicyTrainer) SaveCheckpoint() (string, error) {
+	if trainer == nil {
+		return "", fmt.Errorf("policy trainer is nil")
+	}
+	if trainer.checkpoint == nil {
+		return "", nil
+	}
+	if err := trainer.checkpoint.Save(); err != nil {
+		return "", err
+	}
+	names, err := trainer.checkpoint.ListCheckpoints()
+	if err != nil {
+		return "", err
+	}
+	if len(names) == 0 {
+		return "", fmt.Errorf("checkpoint save completed but no checkpoint files were listed")
+	}
+	trainer.LatestCheckpoint = names[len(names)-1]
+	return trainer.LatestCheckpoint, nil
 }
 
 func RunPolicyStep(batch data.Batch, vocab actionspace.Vocabulary) (PolicyStepResult, error) {

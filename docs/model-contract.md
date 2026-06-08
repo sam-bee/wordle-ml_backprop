@@ -211,4 +211,5 @@ the same trainer.
 
 The trainer disables GoMLX PJRT auto-installation in code and requires the CUDA backend to expose exactly one visible
 device. The system environment is responsible for masking CUDA visibility so that this one device is the RTX 5070 Ti.
-The current loop reports loss only; checkpointing and saved model export are still intentionally not implemented.
+The CLI saves native GoMLX checkpoints after each completed epoch and writes a project manifest. Saved standalone model
+export is still intentionally not implemented.
