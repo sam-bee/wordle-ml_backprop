@@ -72,17 +72,19 @@ Initialize these layers in the policy model:
 | Shared turn encoder | hidden to output | `128 -> 64` | `128` | `0.1250000000` | `64` |
 | Dense trunk | input to hidden 0 | `321 -> 256` | `321` | `0.0789337038` | `256` |
 | Dense trunk | hidden 0 to hidden 1 | `256 -> 128` | `256` | `0.0883883476` | `128` |
-| Dense trunk | hidden 1 to output | `128 -> 64` | `128` | `0.1250000000` | `64` |
+| Dense trunk | hidden 1 to hidden 2 | `128 -> 128` | `128` | `0.1250000000` | `128` |
+| Dense trunk | hidden 2 to hidden 3 | `128 -> 128` | `128` | `0.1250000000` | `128` |
+| Dense trunk | hidden 3 to output | `128 -> 64` | `128` | `0.1250000000` | `64` |
 
 Total policy-model trainable scalars:
 
 ```text
-weights = 149,888
-biases  = 640
-total   = 150,528
+weights = 182,656
+biases  = 896
+total   = 183,552
 ```
 
-All 149,888 weights are random normal samples. All 640 biases are zero.
+All 182,656 weights are random normal samples. All 896 biases are zero.
 
 ## Output Embedding Structure
 
@@ -217,7 +219,9 @@ function make_random_model(action_words, action_count, rng, config):
     initialize_dense_layer(model.encoder_hidden_to_output, 128, 64, rng, config.dense_weight_gain)
     initialize_dense_layer(model.trunk_input_to_hidden0, 321, 256, rng, config.dense_weight_gain)
     initialize_dense_layer(model.trunk_hidden0_to_hidden1, 256, 128, rng, config.dense_weight_gain)
-    initialize_dense_layer(model.trunk_hidden1_to_output, 128, 64, rng, config.dense_weight_gain)
+    initialize_dense_layer(model.trunk_hidden1_to_hidden2, 128, 128, rng, config.dense_weight_gain)
+    initialize_dense_layer(model.trunk_hidden2_to_hidden3, 128, 128, rng, config.dense_weight_gain)
+    initialize_dense_layer(model.trunk_hidden3_to_output, 128, 64, rng, config.dense_weight_gain)
 
     for action_index from 0 to action_count - 1:
         model.action_words[action_index] = action_words[action_index]
