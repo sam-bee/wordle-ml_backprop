@@ -119,10 +119,11 @@ active feedback indices: 130, 134, 138, 139, 143
 Each occupied turn's 145-value raw feature vector is passed through the same shared turn encoder:
 
 ```text
-145 -> 128 -> 64
+145 -> 128 -> 64 -> 64
 ```
 
-Use ReLU after the 128-value hidden layer. Do not apply an activation to the 64-value encoder output.
+Use ReLU after the 128-value hidden layer and after the intermediate 64-value hidden layer. Do not apply an activation
+to the final 64-value encoder output.
 
 The same encoder weights are reused for every occupied turn slot. There are not five independent turn encoders.
 
@@ -224,8 +225,8 @@ remaining future slots contain zeroes
 The 321-value vector above is the direct input to the dense trunk:
 
 ```text
-321 -> 256 -> 128 -> 64
+321 -> 256 -> 256 -> 128 -> 64
 ```
 
-Use ReLU after the 256-value hidden layer and after the 128-value hidden layer. Do not apply an activation to the final
+Use ReLU after each 256-value hidden layer and after the 128-value hidden layer. Do not apply an activation to the final
 64-value policy vector.

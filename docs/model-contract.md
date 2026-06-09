@@ -112,11 +112,11 @@ for each of the five tile positions.
 Each occupied turn's 145-value raw feature vector passes through the same shared turn encoder:
 
 ```text
-145 -> 128 -> 64
+145 -> 128 -> 64 -> 64
 ```
 
-Use ReLU after the 128-value hidden layer. Do not apply an activation to the 64-value encoder output. The same encoder
-weights are reused for every occupied turn slot.
+Use ReLU after the 128-value hidden layer and after the intermediate 64-value hidden layer. Do not apply an activation
+to the final 64-value encoder output. The same encoder weights are reused for every occupied turn slot.
 
 Empty slots must not be encoded by passing an all-zero 145-value vector through the shared encoder. For every empty
 slot, the model input uses a literal 64-value zero vector.
@@ -170,10 +170,10 @@ slot 4 starts at input[257]
 The dense trunk is:
 
 ```text
-321 -> 256 -> 128 -> 64
+321 -> 256 -> 256 -> 128 -> 64
 ```
 
-Use ReLU after the 256-value layer and after the 128-value layer. Do not apply an activation to the final 64-value
+Use ReLU after each 256-value layer and after the 128-value layer. Do not apply an activation to the final 64-value
 vector.
 
 ## Policy Training

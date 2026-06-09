@@ -91,6 +91,7 @@ func TestDenseWeightStddev(t *testing.T) {
 	}{
 		{fanIn: 145, want: 0.1174440439},
 		{fanIn: 128, want: 0.1250000000},
+		{fanIn: 64, want: 0.1767766953},
 		{fanIn: 321, want: 0.0789337038},
 		{fanIn: 256, want: 0.0883883476},
 	}

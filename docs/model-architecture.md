@@ -131,7 +131,7 @@ not five separate encoders.
 Shape:
 
 ```text
-145 -> 128 -> 64
+145 -> 128 -> 64 -> 64
 ```
 
 Forward equations:
@@ -139,7 +139,11 @@ Forward equations:
 ```text
 hidden_pre[j] = encoder_b0[j] + sum_i encoder_w0[i, j] * turn_x[i]
 hidden[j] = max(0, hidden_pre[j])
-encoded_turn[k] = encoder_b1[k] + sum_j encoder_w1[j, k] * hidden[j]
+
+hidden64_pre[k] = encoder_b1[k] + sum_j encoder_w1[j, k] * hidden[j]
+hidden64[k] = max(0, hidden64_pre[k])
+
+encoded_turn[m] = encoder_b2[m] + sum_k encoder_w2[k, m] * hidden64[k]
 ```
 
 Layer details:
@@ -147,7 +151,8 @@ Layer details:
 | Layer | Weight Shape | Bias Shape | Activation |
 | --- | ---: | ---: | --- |
 | `input_encoder.input_to_hidden` | `[145,128]` | `[128]` | ReLU |
-| `input_encoder.hidden_to_output` | `[128,64]` | `[64]` | none |
+| `input_encoder.hidden_to_hidden64` | `[128,64]` | `[64]` | ReLU |
+| `input_encoder.hidden64_to_output` | `[64,64]` | `[64]` | none |
 
 The 64-dimensional encoder output is linear. Negative values are allowed.
 
@@ -213,7 +218,7 @@ vector.
 Shape:
 
 ```text
-321 -> 256 -> 128 -> 64
+321 -> 256 -> 256 -> 128 -> 64
 ```
 
 Forward equations:
@@ -225,7 +230,10 @@ hidden0[j] = max(0, hidden0_pre[j])
 hidden1_pre[k] = trunk_b1[k] + sum_j trunk_w1[j, k] * hidden0[j]
 hidden1[k] = max(0, hidden1_pre[k])
 
-policy[p] = trunk_b2[p] + sum_k trunk_w2[k, p] * hidden1[k]
+hidden2_pre[m] = trunk_b2[m] + sum_k trunk_w2[k, m] * hidden1[k]
+hidden2[m] = max(0, hidden2_pre[m])
+
+policy[p] = trunk_b3[p] + sum_m trunk_w3[m, p] * hidden2[m]
 ```
 
 Layer details:
@@ -233,8 +241,9 @@ Layer details:
 | Layer | Weight Shape | Bias Shape | Activation |
 | --- | ---: | ---: | --- |
 | `dense_trunk.input_to_hidden0` | `[321,256]` | `[256]` | ReLU |
-| `dense_trunk.hidden0_to_hidden1` | `[256,128]` | `[128]` | ReLU |
-| `dense_trunk.hidden1_to_output` | `[128,64]` | `[64]` | none |
+| `dense_trunk.hidden0_to_hidden1` | `[256,256]` | `[256]` | ReLU |
+| `dense_trunk.hidden1_to_hidden2` | `[256,128]` | `[128]` | ReLU |
+| `dense_trunk.hidden2_to_output` | `[128,64]` | `[64]` | none |
 
 The 64-dimensional policy vector is linear. There is no output activation and
 no normalization.
@@ -251,22 +260,26 @@ Dense variable scopes:
 | --- | ---: | ---: |
 | `policy_model.input_encoder.input_to_hidden.dense.weights` | `[145,128]` | 18,560 |
 | `policy_model.input_encoder.input_to_hidden.dense.biases` | `[128]` | 128 |
-| `policy_model.input_encoder.hidden_to_output.dense.weights` | `[128,64]` | 8,192 |
-| `policy_model.input_encoder.hidden_to_output.dense.biases` | `[64]` | 64 |
+| `policy_model.input_encoder.hidden_to_hidden64.dense.weights` | `[128,64]` | 8,192 |
+| `policy_model.input_encoder.hidden_to_hidden64.dense.biases` | `[64]` | 64 |
+| `policy_model.input_encoder.hidden64_to_output.dense.weights` | `[64,64]` | 4,096 |
+| `policy_model.input_encoder.hidden64_to_output.dense.biases` | `[64]` | 64 |
 | `policy_model.dense_trunk.input_to_hidden0.dense.weights` | `[321,256]` | 82,176 |
 | `policy_model.dense_trunk.input_to_hidden0.dense.biases` | `[256]` | 256 |
-| `policy_model.dense_trunk.hidden0_to_hidden1.dense.weights` | `[256,128]` | 32,768 |
-| `policy_model.dense_trunk.hidden0_to_hidden1.dense.biases` | `[128]` | 128 |
-| `policy_model.dense_trunk.hidden1_to_output.dense.weights` | `[128,64]` | 8,192 |
-| `policy_model.dense_trunk.hidden1_to_output.dense.biases` | `[64]` | 64 |
+| `policy_model.dense_trunk.hidden0_to_hidden1.dense.weights` | `[256,256]` | 65,536 |
+| `policy_model.dense_trunk.hidden0_to_hidden1.dense.biases` | `[256]` | 256 |
+| `policy_model.dense_trunk.hidden1_to_hidden2.dense.weights` | `[256,128]` | 32,768 |
+| `policy_model.dense_trunk.hidden1_to_hidden2.dense.biases` | `[128]` | 128 |
+| `policy_model.dense_trunk.hidden2_to_output.dense.weights` | `[128,64]` | 8,192 |
+| `policy_model.dense_trunk.hidden2_to_output.dense.biases` | `[64]` | 64 |
 
 Dense parameter counts:
 
 | Group | Trainable Scalars |
 | --- | ---: |
-| Shared input encoder | 26,944 |
-| Dense trunk | 123,584 |
-| Dense policy network total | 150,528 |
+| Shared input encoder | 31,104 |
+| Dense trunk | 189,376 |
+| Dense policy network total | 220,480 |
 
 The output-embedding tail is also trainable:
 
@@ -275,7 +288,7 @@ The output-embedding tail is also trainable:
 | `output_embeddings.trainable_tail` | `[A,38]` | `A * 38` |
 
 For the full 4,739-word action catalog, the tail contains 180,082 trainable
-scalars and the whole policy model contains 330,610 trainable scalars.
+scalars and the whole policy model contains 400,562 trainable scalars.
 
 Model persistence is handled by GoMLX checkpoints. The architecture contract
 does not define a separate binary export format.
@@ -376,10 +389,12 @@ Default dense weight standard deviations:
 | Layer | Fan-In | Default Stddev |
 | --- | ---: | ---: |
 | `input_encoder.input_to_hidden` | 145 | 0.1174440439 |
-| `input_encoder.hidden_to_output` | 128 | 0.125 |
+| `input_encoder.hidden_to_hidden64` | 128 | 0.125 |
+| `input_encoder.hidden64_to_output` | 64 | 0.1767766953 |
 | `dense_trunk.input_to_hidden0` | 321 | 0.0789337038 |
 | `dense_trunk.hidden0_to_hidden1` | 256 | 0.0883883476 |
-| `dense_trunk.hidden1_to_output` | 128 | 0.125 |
+| `dense_trunk.hidden1_to_hidden2` | 256 | 0.0883883476 |
+| `dense_trunk.hidden2_to_output` | 128 | 0.125 |
 
 Output embedding tail values use:
 
@@ -412,7 +427,12 @@ encode_turn(turn):
     h = dense(encoder_w0, encoder_b0, x)
     for j in 0..127:
         h[j] = relu(h[j])
-    return dense(encoder_w1, encoder_b1, h)
+
+    h64 = dense(encoder_w1, encoder_b1, h)
+    for j in 0..63:
+        h64[j] = relu(h64[j])
+
+    return dense(encoder_w2, encoder_b2, h64)
 
 encode_state(state):
     reject if invalid, finished, or state.turn_count > 5
@@ -435,10 +455,14 @@ forward_policy(state):
         h0[j] = relu(h0[j])
 
     h1 = dense(trunk_w1, trunk_b1, h0)
-    for j in 0..127:
+    for j in 0..255:
         h1[j] = relu(h1[j])
 
-    return dense(trunk_w2, trunk_b2, h1)  // length 64
+    h2 = dense(trunk_w2, trunk_b2, h1)
+    for j in 0..127:
+        h2[j] = relu(h2[j])
+
+    return dense(trunk_w3, trunk_b3, h2)  // length 64
 
 fixed_word_features(word):
     counts = zeros(26)
