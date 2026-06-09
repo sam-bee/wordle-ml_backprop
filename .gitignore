@@ -1,3 +1,4 @@
+.env
 /checkpoints/*
 !/checkpoints/.gitkeep
 !/checkpoints/runs/

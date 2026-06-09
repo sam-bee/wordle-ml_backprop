@@ -5,8 +5,8 @@ services:
       context: .
       dockerfile: docker/tensorboard.Dockerfile
       args:
-        DOCKERCOMPOSE_UID: 1001
-        DOCKERCOMPOSE_GID: 1001
+        DOCKERCOMPOSE_UID: ${DOCKERCOMPOSE_UID:-1001}
+        DOCKERCOMPOSE_GID: ${DOCKERCOMPOSE_GID:-1001}
     working_dir: /workspace
     volumes:
       - type: bind

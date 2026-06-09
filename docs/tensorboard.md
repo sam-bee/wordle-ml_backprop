@@ -18,6 +18,10 @@ Start it with:
 make tensorboard-up
 ```
 
+The Makefile creates `.env` from `.env.example` if `.env` is missing. The tracked defaults use UID/GID `1001`; set
+`DOCKERCOMPOSE_UID` and `DOCKERCOMPOSE_GID` in the local, ignored `.env` file to match the host user that owns
+`checkpoints/runs/`.
+
 Then open:
 
 ```text
