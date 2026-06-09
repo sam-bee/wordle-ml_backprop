@@ -208,7 +208,7 @@ vector.
 Shape:
 
 ```text
-321 -> 256 -> 128 -> 128 -> 128 -> 64
+321 -> 256 -> 256 -> 128 -> 128 -> 128 -> 64
 ```
 
 Forward equations:
@@ -226,7 +226,10 @@ hidden2[m] = max(0, hidden2_pre[m])
 hidden3_pre[n] = trunk_b3[n] + sum_m trunk_w3[n, m] * hidden2[m]
 hidden3[n] = max(0, hidden3_pre[n])
 
-policy[p] = trunk_b4[p] + sum_n trunk_w4[p, n] * hidden3[n]
+hidden4_pre[q] = trunk_b4[q] + sum_n trunk_w4[q, n] * hidden3[n]
+hidden4[q] = max(0, hidden4_pre[q])
+
+policy[p] = trunk_b5[p] + sum_q trunk_w5[p, q] * hidden4[q]
 ```
 
 Layer details:
@@ -234,10 +237,11 @@ Layer details:
 | Layer | Weight Shape | Bias Shape | Activation |
 | --- | ---: | ---: | --- |
 | `dense_trunk.input_to_hidden0` | `[256][321]` | `[256]` | ReLU |
-| `dense_trunk.hidden0_to_hidden1` | `[128][256]` | `[128]` | ReLU |
-| `dense_trunk.hidden1_to_hidden2` | `[128][128]` | `[128]` | ReLU |
+| `dense_trunk.hidden0_to_hidden1` | `[256][256]` | `[256]` | ReLU |
+| `dense_trunk.hidden1_to_hidden2` | `[128][256]` | `[128]` | ReLU |
 | `dense_trunk.hidden2_to_hidden3` | `[128][128]` | `[128]` | ReLU |
-| `dense_trunk.hidden3_to_output` | `[64][128]` | `[64]` | none |
+| `dense_trunk.hidden3_to_hidden4` | `[128][128]` | `[128]` | ReLU |
+| `dense_trunk.hidden4_to_output` | `[64][128]` | `[64]` | none |
 
 The 64-dimensional policy vector is linear. There is no output activation and
 no normalization.
@@ -268,22 +272,24 @@ The policy model parameter order is:
 4. `input_encoder.hidden_to_output.biases` - `64` fp16 values
 5. `dense_trunk.input_to_hidden0.weights` - `256 * 321 = 82,176` fp16 values
 6. `dense_trunk.input_to_hidden0.biases` - `256` fp16 values
-7. `dense_trunk.hidden0_to_hidden1.weights` - `128 * 256 = 32,768` fp16 values
-8. `dense_trunk.hidden0_to_hidden1.biases` - `128` fp16 values
-9. `dense_trunk.hidden1_to_hidden2.weights` - `128 * 128 = 16,384` fp16 values
+7. `dense_trunk.hidden0_to_hidden1.weights` - `256 * 256 = 65,536` fp16 values
+8. `dense_trunk.hidden0_to_hidden1.biases` - `256` fp16 values
+9. `dense_trunk.hidden1_to_hidden2.weights` - `128 * 256 = 32,768` fp16 values
 10. `dense_trunk.hidden1_to_hidden2.biases` - `128` fp16 values
 11. `dense_trunk.hidden2_to_hidden3.weights` - `128 * 128 = 16,384` fp16 values
 12. `dense_trunk.hidden2_to_hidden3.biases` - `128` fp16 values
-13. `dense_trunk.hidden3_to_output.weights` - `64 * 128 = 8,192` fp16 values
-14. `dense_trunk.hidden3_to_output.biases` - `64` fp16 values
+13. `dense_trunk.hidden3_to_hidden4.weights` - `128 * 128 = 16,384` fp16 values
+14. `dense_trunk.hidden3_to_hidden4.biases` - `128` fp16 values
+15. `dense_trunk.hidden4_to_output.weights` - `64 * 128 = 8,192` fp16 values
+16. `dense_trunk.hidden4_to_output.biases` - `64` fp16 values
 
 Parameter counts:
 
 | Group | fp16 Values | Bytes |
 | --- | ---: | ---: |
 | Shared input encoder | 26,944 | 53,888 |
-| Dense trunk | 156,608 | 313,216 |
-| Policy model total | 183,552 | 367,104 |
+| Dense trunk | 222,400 | 444,800 |
+| Policy model total | 249,344 | 498,688 |
 
 ## Output Embeddings
 
@@ -377,9 +383,9 @@ The binary genome payload stores:
 
 ```text
 offset 0:
-    PolicyModelParameters, 367,104 bytes
+    PolicyModelParameters, 498,688 bytes
 
-offset 367,104:
+offset 498,688:
     trainable output-tail rows for active actions
     row 0: 38 fp16 values
     row 1: 38 fp16 values
@@ -392,7 +398,7 @@ Each tail row is `38 * 2 = 76` bytes.
 Current stride formula, with the current fp16-only layout and 2-byte alignment:
 
 ```text
-genome_byte_count = 367104 + action_count * 76
+genome_byte_count = 498688 + action_count * 76
 ```
 
 For the full 4,739-word catalog:
@@ -400,7 +406,7 @@ For the full 4,739-word catalog:
 ```text
 tail values = 4739 * 38 = 180,082 fp16 values
 tail bytes = 360,164
-full genome bytes = 727,268
+full genome bytes = 858,852
 ```
 
 The C++ source computes this through `ComputeDynamicGenomeStrideBytes`, which
@@ -449,9 +455,10 @@ Default dense weight standard deviations:
 | `input_encoder.hidden_to_output` | 128 | 0.125 |
 | `dense_trunk.input_to_hidden0` | 321 | 0.0789337038 |
 | `dense_trunk.hidden0_to_hidden1` | 256 | 0.0883883476 |
-| `dense_trunk.hidden1_to_hidden2` | 128 | 0.125 |
+| `dense_trunk.hidden1_to_hidden2` | 256 | 0.0883883476 |
 | `dense_trunk.hidden2_to_hidden3` | 128 | 0.125 |
-| `dense_trunk.hidden3_to_output` | 128 | 0.125 |
+| `dense_trunk.hidden3_to_hidden4` | 128 | 0.125 |
+| `dense_trunk.hidden4_to_output` | 128 | 0.125 |
 
 Output embedding trainable tails at initial random creation use:
 
@@ -537,7 +544,7 @@ forward_policy(grid):
         h0[j] = relu(h0[j])
 
     h1 = dense(trunk_w1, trunk_b1, h0)
-    for j in 0..127:
+    for j in 0..255:
         h1[j] = relu(h1[j])
 
     h2 = dense(trunk_w2, trunk_b2, h1)
@@ -548,7 +555,11 @@ forward_policy(grid):
     for j in 0..127:
         h3[j] = relu(h3[j])
 
-    return dense(trunk_w4, trunk_b4, h3)  // length 64
+    h4 = dense(trunk_w4, trunk_b4, h3)
+    for j in 0..127:
+        h4[j] = relu(h4[j])
+
+    return dense(trunk_w5, trunk_b5, h4)  // length 64
 
 fixed_word_features(word):
     counts = zeros(26)

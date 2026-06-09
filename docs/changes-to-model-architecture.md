@@ -7,8 +7,8 @@ architecture in sufficient detail to support such changes.
 
 ## 2026-06-08: Dense Trunk Depth Experiment
 
-The GoMLX model has an experimental dense-trunk variant with two extra 128-neuron hidden layers between the original
-128-neuron hidden layer and the 64-value policy output head.
+The first dense-trunk depth experiment added two extra 128-neuron hidden layers between the original 128-neuron hidden
+layer and the 64-value policy output head.
 
 Previous dense trunk:
 
@@ -25,7 +25,7 @@ Experimental dense trunk:
 The two new layers both use ReLU activation. The final 64-value policy vector remains linear, with no output activation
 or normalization.
 
-New GoMLX variable scopes:
+New GoMLX variable scopes for that experiment:
 
 - `dense_trunk.hidden1_to_hidden2`
 - `dense_trunk.hidden2_to_hidden3`
@@ -36,3 +36,34 @@ experiment.
 
 Dense-trunk parameter count changes from 123,584 fp16-equivalent scalars to 156,608. The policy-model dense parameter
 count changes from 150,528 scalars to 183,552.
+
+## 2026-06-09: Additional 256-Wide Dense Trunk Layer
+
+The dense-trunk depth experiment was extended by inserting one 256-neuron hidden layer between the existing 256-neuron
+layer and the first 128-neuron layer.
+
+Previous experimental dense trunk:
+
+```text
+321 -> 256 -> 128 -> 128 -> 128 -> 64
+```
+
+Updated experimental dense trunk:
+
+```text
+321 -> 256 -> 256 -> 128 -> 128 -> 128 -> 64
+```
+
+The inserted 256-neuron layer uses ReLU activation. The final 64-value policy vector remains linear, with no output
+activation or normalization.
+
+Updated GoMLX variable scopes:
+
+- `dense_trunk.hidden0_to_hidden1` is now `256 -> 256`
+- `dense_trunk.hidden1_to_hidden2` is now `256 -> 128`
+- `dense_trunk.hidden2_to_hidden3` remains `128 -> 128`
+- `dense_trunk.hidden3_to_hidden4` is a new `128 -> 128` layer
+- `dense_trunk.hidden4_to_output` replaces `dense_trunk.hidden3_to_output` as the final projection
+
+Dense-trunk parameter count changes from 156,608 fp16-equivalent scalars to 222,400. The policy-model dense parameter
+count changes from 183,552 scalars to 249,344.
