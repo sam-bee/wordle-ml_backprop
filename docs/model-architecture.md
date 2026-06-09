@@ -213,7 +213,7 @@ vector.
 Shape:
 
 ```text
-321 -> 256 -> 256 -> 128 -> 128 -> 128 -> 64
+321 -> 256 -> 256 -> 256 -> 256 -> 128 -> 128 -> 128 -> 64
 ```
 
 Forward equations:
@@ -234,7 +234,13 @@ hidden3[n] = max(0, hidden3_pre[n])
 hidden4_pre[q] = trunk_b4[q] + sum_n trunk_w4[n, q] * hidden3[n]
 hidden4[q] = max(0, hidden4_pre[q])
 
-policy[p] = trunk_b5[p] + sum_q trunk_w5[q, p] * hidden4[q]
+hidden5_pre[r] = trunk_b5[r] + sum_q trunk_w5[q, r] * hidden4[q]
+hidden5[r] = max(0, hidden5_pre[r])
+
+hidden6_pre[s] = trunk_b6[s] + sum_r trunk_w6[r, s] * hidden5[r]
+hidden6[s] = max(0, hidden6_pre[s])
+
+policy[p] = trunk_b7[p] + sum_s trunk_w7[s, p] * hidden6[s]
 ```
 
 Layer details:
@@ -243,10 +249,12 @@ Layer details:
 | --- | ---: | ---: | --- |
 | `dense_trunk.input_to_hidden0` | `[321,256]` | `[256]` | ReLU |
 | `dense_trunk.hidden0_to_hidden1` | `[256,256]` | `[256]` | ReLU |
-| `dense_trunk.hidden1_to_hidden2` | `[256,128]` | `[128]` | ReLU |
-| `dense_trunk.hidden2_to_hidden3` | `[128,128]` | `[128]` | ReLU |
-| `dense_trunk.hidden3_to_hidden4` | `[128,128]` | `[128]` | ReLU |
-| `dense_trunk.hidden4_to_output` | `[128,64]` | `[64]` | none |
+| `dense_trunk.hidden1_to_hidden2` | `[256,256]` | `[256]` | ReLU |
+| `dense_trunk.hidden2_to_hidden3` | `[256,256]` | `[256]` | ReLU |
+| `dense_trunk.hidden3_to_hidden4` | `[256,128]` | `[128]` | ReLU |
+| `dense_trunk.hidden4_to_hidden5` | `[128,128]` | `[128]` | ReLU |
+| `dense_trunk.hidden5_to_hidden6` | `[128,128]` | `[128]` | ReLU |
+| `dense_trunk.hidden6_to_output` | `[128,64]` | `[64]` | none |
 
 The 64-dimensional policy vector is linear. There is no output activation and
 no normalization.
@@ -269,22 +277,26 @@ Dense variable scopes:
 | `policy_model.dense_trunk.input_to_hidden0.dense.biases` | `[256]` | 256 |
 | `policy_model.dense_trunk.hidden0_to_hidden1.dense.weights` | `[256,256]` | 65,536 |
 | `policy_model.dense_trunk.hidden0_to_hidden1.dense.biases` | `[256]` | 256 |
-| `policy_model.dense_trunk.hidden1_to_hidden2.dense.weights` | `[256,128]` | 32,768 |
-| `policy_model.dense_trunk.hidden1_to_hidden2.dense.biases` | `[128]` | 128 |
-| `policy_model.dense_trunk.hidden2_to_hidden3.dense.weights` | `[128,128]` | 16,384 |
-| `policy_model.dense_trunk.hidden2_to_hidden3.dense.biases` | `[128]` | 128 |
-| `policy_model.dense_trunk.hidden3_to_hidden4.dense.weights` | `[128,128]` | 16,384 |
+| `policy_model.dense_trunk.hidden1_to_hidden2.dense.weights` | `[256,256]` | 65,536 |
+| `policy_model.dense_trunk.hidden1_to_hidden2.dense.biases` | `[256]` | 256 |
+| `policy_model.dense_trunk.hidden2_to_hidden3.dense.weights` | `[256,256]` | 65,536 |
+| `policy_model.dense_trunk.hidden2_to_hidden3.dense.biases` | `[256]` | 256 |
+| `policy_model.dense_trunk.hidden3_to_hidden4.dense.weights` | `[256,128]` | 32,768 |
 | `policy_model.dense_trunk.hidden3_to_hidden4.dense.biases` | `[128]` | 128 |
-| `policy_model.dense_trunk.hidden4_to_output.dense.weights` | `[128,64]` | 8,192 |
-| `policy_model.dense_trunk.hidden4_to_output.dense.biases` | `[64]` | 64 |
+| `policy_model.dense_trunk.hidden4_to_hidden5.dense.weights` | `[128,128]` | 16,384 |
+| `policy_model.dense_trunk.hidden4_to_hidden5.dense.biases` | `[128]` | 128 |
+| `policy_model.dense_trunk.hidden5_to_hidden6.dense.weights` | `[128,128]` | 16,384 |
+| `policy_model.dense_trunk.hidden5_to_hidden6.dense.biases` | `[128]` | 128 |
+| `policy_model.dense_trunk.hidden6_to_output.dense.weights` | `[128,64]` | 8,192 |
+| `policy_model.dense_trunk.hidden6_to_output.dense.biases` | `[64]` | 64 |
 
 Dense parameter counts:
 
 | Group | Trainable Scalars |
 | --- | ---: |
 | Shared input encoder | 26,944 |
-| Dense trunk | 222,400 |
-| Dense policy network total | 249,344 |
+| Dense trunk | 353,984 |
+| Dense policy network total | 380,928 |
 
 The output-embedding tail is also trainable:
 
@@ -293,7 +305,7 @@ The output-embedding tail is also trainable:
 | `output_embeddings.trainable_tail` | `[A,38]` | `A * 38` |
 
 For the full 4,739-word action catalog, the tail contains 180,082 trainable
-scalars and the whole policy model contains 429,426 trainable scalars.
+scalars and the whole policy model contains 561,010 trainable scalars.
 
 Model persistence is handled by GoMLX checkpoints. The architecture contract
 does not define a separate binary export format.
@@ -398,9 +410,11 @@ Default dense weight standard deviations:
 | `dense_trunk.input_to_hidden0` | 321 | 0.0789337038 |
 | `dense_trunk.hidden0_to_hidden1` | 256 | 0.0883883476 |
 | `dense_trunk.hidden1_to_hidden2` | 256 | 0.0883883476 |
-| `dense_trunk.hidden2_to_hidden3` | 128 | 0.125 |
-| `dense_trunk.hidden3_to_hidden4` | 128 | 0.125 |
-| `dense_trunk.hidden4_to_output` | 128 | 0.125 |
+| `dense_trunk.hidden2_to_hidden3` | 256 | 0.0883883476 |
+| `dense_trunk.hidden3_to_hidden4` | 256 | 0.0883883476 |
+| `dense_trunk.hidden4_to_hidden5` | 128 | 0.125 |
+| `dense_trunk.hidden5_to_hidden6` | 128 | 0.125 |
+| `dense_trunk.hidden6_to_output` | 128 | 0.125 |
 
 Output embedding tail values use:
 
@@ -460,18 +474,26 @@ forward_policy(state):
         h1[j] = relu(h1[j])
 
     h2 = dense(trunk_w2, trunk_b2, h1)
-    for j in 0..127:
+    for j in 0..255:
         h2[j] = relu(h2[j])
 
     h3 = dense(trunk_w3, trunk_b3, h2)
-    for j in 0..127:
+    for j in 0..255:
         h3[j] = relu(h3[j])
 
     h4 = dense(trunk_w4, trunk_b4, h3)
     for j in 0..127:
         h4[j] = relu(h4[j])
 
-    return dense(trunk_w5, trunk_b5, h4)  // length 64
+    h5 = dense(trunk_w5, trunk_b5, h4)
+    for j in 0..127:
+        h5[j] = relu(h5[j])
+
+    h6 = dense(trunk_w6, trunk_b6, h5)
+    for j in 0..127:
+        h6[j] = relu(h6[j])
+
+    return dense(trunk_w7, trunk_b7, h6)  // length 64
 
 fixed_word_features(word):
     counts = zeros(26)

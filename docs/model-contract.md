@@ -170,10 +170,10 @@ slot 4 starts at input[257]
 The dense trunk is:
 
 ```text
-321 -> 256 -> 256 -> 128 -> 128 -> 128 -> 64
+321 -> 256 -> 256 -> 256 -> 256 -> 128 -> 128 -> 128 -> 64
 ```
 
-Use ReLU after both 256-value layers and after each 128-value layer. Do not apply an activation to the final 64-value
+Use ReLU after each 256-value layer and after each 128-value layer. Do not apply an activation to the final 64-value
 vector.
 
 ## Policy Training
