@@ -1,7 +1,6 @@
 # Wordle Policy Model Input Specification
 
-This document specifies the input expected by the Wordle policy model. It is written as an implementation-independent
-contract for reimplementing the same model architecture in another language.
+This document specifies the input expected by the Wordle policy model implemented in this GoMLX backprop project.
 
 The Go implementation currently lives in `training.BatchToPolicyStateTensors`, which builds the raw turn features,
 occupied-turn mask, and virgin-grid flag consumed by `model.PolicyVector` and `model.PolicyModel`.

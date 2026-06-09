@@ -1,7 +1,6 @@
 # Random Model Initialization Specification
 
-This document specifies how to create a new randomized Wordle policy model. It is written as a portable contract for a
-separate implementation, such as a Go program.
+This document specifies how this project initializes a new randomized Wordle policy model.
 
 ## Scope
 
@@ -18,19 +17,14 @@ parameterized by an active action count `A`, where:
 1 <= A <= 4739
 ```
 
-The default GA startup active action count is `20`, but the initialization rule is the same for any valid `A`.
+The default active action count is `20`, but the initialization rule is the same for any valid `A`.
 
 ## Numeric Representation
 
-Randomly initialized trainable parameters are stored as fp16 values. A portable implementation should:
+GoMLX initializes trainable variables in the graph variable dtype. The current training path supplies `float32` tensors,
+so current policy variables are `float32`.
 
-1. sample the value as a real-valued float from the distribution specified below
-2. convert the sampled value to IEEE-754 binary16
-3. store the binary16 value
-
-Inference may convert stored fp16 values back to float32 for arithmetic.
-
-There is no clipping or hard min/max range before fp16 conversion. The normal distributions are unbounded.
+There is no clipping or hard min/max range before assignment. The normal distributions are unbounded.
 
 ## Initialization Parameters
 
@@ -49,7 +43,7 @@ output_embedding_tail_stddev >= 0.0
 ```
 
 If `output_embedding_tail_stddev` is `0.0`, every randomly initialized trainable tail value is exactly zero after
-sampling and fp16 conversion.
+sampling.
 
 ## Dense Layer Initialization
 
@@ -62,16 +56,10 @@ bias = 0.0
 
 Each weight is sampled independently. Every bias is exactly zero.
 
-Weights are conceptually indexed as:
+GoMLX dense weights are conceptually indexed as:
 
 ```text
-weights[output_neuron][input_index]
-```
-
-If serialized as a flat array, use row-major order by output neuron first, then input index:
-
-```text
-flat_index = (output_neuron * input_size) + input_index
+weights[input_index][output_neuron]
 ```
 
 ## Policy Model Layers
@@ -133,7 +121,7 @@ With default configuration:
 tail[a][j] ~ Normal(mean = 0.0, stddev = 0.05)
 ```
 
-Each tail value is independently sampled and then stored as fp16.
+Each tail value is independently sampled.
 
 There are:
 
@@ -168,7 +156,7 @@ Specifically, during initial random creation:
 - no full 64-value output embedding is normalized
 - no output embedding is clipped to a magnitude range
 
-The expected trainable-tail L2 norm before fp16 rounding is approximately:
+The expected trainable-tail L2 norm at initialization is approximately:
 
 ```text
 sqrt(38) * 0.05 = 0.3082207001
@@ -176,13 +164,13 @@ sqrt(38) * 0.05 = 0.3082207001
 
 This is only a distributional expectation, not an enforced value.
 
-## Later Action-Space Growth
+## Later Action-Space Changes
 
-Action-space growth is not part of initial random model creation and is not implemented in this GoMLX project yet. A
-future implementation that injects new action rows during GA action-space growth should use magnitude matching for the
-new output-embedding tail rows.
+Changing the active action count after initial model creation is not implemented in this project yet. A future
+implementation that adds new action rows should make a deliberate decision about how to initialize the new
+output-embedding tail rows.
 
-For each child genome being grown from `parent_action_count` rows to a larger action count:
+One possible approach is magnitude matching against existing tail rows:
 
 1. Compute the L2 norm of each existing trainable tail row:
 
@@ -193,7 +181,7 @@ For each child genome being grown from `parent_action_count` rows to a larger ac
 2. Compute the median of those existing row norms. If the row count is even, use the average of the two middle values.
    This median is the target norm.
 
-3. For each newly injected action word, seed a raw 38-value tail from the child model's policy outputs on 3 hint grids
+3. For each newly injected action word, seed a raw 38-value tail from the current model's policy outputs on hint grids
    for that word:
 
    ```text
@@ -202,23 +190,20 @@ For each child genome being grown from `parent_action_count` rows to a larger ac
 
    If the 3 hint grids cannot be built for the word, injection fails.
 
-4. Store each raw tail value as fp16. Let `raw_norm` be the norm of that fp16-rounded raw tail after converting the
-   stored values back to float for arithmetic.
+4. Let `raw_norm` be the norm of the raw tail row.
 
 5. If the target norm is greater than `1.0e-6`, require `raw_norm > 1.0e-6` and scale:
 
    ```text
-   scaled_tail[j] = fp16_rounded_raw_tail[j] * (target_norm / raw_norm)
+   scaled_tail[j] = raw_tail[j] * (target_norm / raw_norm)
    ```
 
-   Store each scaled value as fp16.
-
-6. If the target norm is less than or equal to `1.0e-6`, scale the row to all zeroes and store fp16 zeroes.
+6. If the target norm is less than or equal to `1.0e-6`, scale the row to all zeroes.
 
 Only the 38-value trainable tail is norm-matched. The fixed 26-value word-feature prefix is not included in this norm
 and is not rescaled.
 
-## Portable Creation Pseudocode
+## Creation Pseudocode
 
 ```text
 function make_random_model(action_words, action_count, rng, config):
@@ -238,25 +223,25 @@ function make_random_model(action_words, action_count, rng, config):
         model.action_words[action_index] = action_words[action_index]
         for feature_index from 0 to 37:
             value = normal_sample(rng, mean = 0.0, stddev = config.output_embedding_tail_stddev)
-            model.tail[action_index][feature_index] = to_fp16(value)
+            model.tail[action_index][feature_index] = value
 
     return model
 
 function initialize_dense_layer(layer, input_size, output_size, rng, dense_weight_gain):
     stddev = dense_weight_gain * sqrt(2.0 / input_size)
 
-    for output_index from 0 to output_size - 1:
-        for input_index from 0 to input_size - 1:
+    for input_index from 0 to input_size - 1:
+        for output_index from 0 to output_size - 1:
             value = normal_sample(rng, mean = 0.0, stddev = stddev)
-            layer.weights[output_index][input_index] = to_fp16(value)
+            layer.weights[input_index][output_index] = value
 
     for output_index from 0 to output_size - 1:
-        layer.biases[output_index] = to_fp16(0.0)
+        layer.biases[output_index] = 0.0
 ```
 
-The exact RNG implementation does not affect the model contract unless bit-for-bit seed compatibility is required. For a
-portable reimplementation, the important rule is independent normal draws with the means, standard deviations, dimensions,
-and fp16 storage conversion specified above.
+The exact RNG implementation does not affect the model contract unless bit-for-bit seed compatibility is required. The
+important rule is independent normal draws with the means, standard deviations, dimensions, and initialization rules
+specified above.
 
 ## GoMLX Implementation Status
 
@@ -269,4 +254,4 @@ The GoMLX implementation exposes these rules in `internal/model`:
 - `FixedActionFeatures` and `FixedActionFeatureMatrix` build the fixed 26-value action feature prefix.
 
 The current project persists model state through native GoMLX checkpoints, so GoMLX variables are initialized and saved in
-the graph variable dtype. The fp16 storage rule above belongs to a future custom export format if one is needed.
+the graph variable dtype.

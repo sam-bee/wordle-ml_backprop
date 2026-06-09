@@ -1,6 +1,9 @@
 # Changes to Model Architecture
 
-This document exhaustively lists any changes to the model architecture, since the original implementation. Its purpose
-is to inform model architecture decisions in a parallel project. It may be necessary for any changes to the architecture
-to be implemented in another programming language, so this document aims to specify any alterations to the model
-architecture in sufficient detail to support such changes.
+This document lists deliberate changes to the Wordle policy model architecture in this project.
+
+It tracks structural changes such as input encoders, dense trunk layers, output embeddings, and policy heads. It does not
+track training-loop, optimizer, checkpointing, telemetry, or CLI changes.
+
+No model-architecture changes are recorded on `master` beyond the current baseline described in
+`docs/model-architecture.md`.

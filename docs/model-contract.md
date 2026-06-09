@@ -41,8 +41,7 @@ the configured batch size for the last batch.
 
 ## Policy Model Input
 
-The GoMLX policy input conversion follows `docs/model-input-spec.md`, which describes the input contract from the
-similar CUDA implementation.
+The GoMLX policy input conversion follows `docs/model-input-spec.md`, which describes the state input contract.
 
 The model consumes a Wordle decision state before the next guess. It includes:
 
@@ -213,6 +212,6 @@ When `--learning-rate-decay` is enabled, GoMLX SGD uses `initial_learning_rate /
 uses the configured initial learning rate. The trainer disables GoMLX PJRT auto-installation in code and requires the
 CUDA backend to expose exactly one visible device. The system environment is responsible for masking CUDA visibility so
 that this one device is the RTX 5070 Ti.
-The CLI saves native GoMLX checkpoints after each completed epoch and writes a project manifest. Saved standalone model
-export is still intentionally not implemented. Checkpoint resume is opt-in with `--resume`; without it, the CLI starts a
-new checkpoint run directory.
+The CLI saves native GoMLX checkpoints after each completed epoch, writes a project manifest, and emits TensorBoard
+scalar telemetry under the run directory. Saved standalone model export is still intentionally not implemented.
+Checkpoint resume is opt-in with `--resume`; without it, the CLI starts a new checkpoint run directory.
