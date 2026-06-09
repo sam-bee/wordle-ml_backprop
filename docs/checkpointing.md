@@ -25,11 +25,11 @@ New runs can be given a short TensorBoard-visible label with `--run-label`. The
 label is sanitized and appended to the timestamped run id:
 
 ```sh
-go run ./cmd/train --run-label "small trunk 1x256 1x128"
+go run ./cmd/train --run-label "deeper dense 1x256 2x128"
 ```
 
 ```text
-checkpoints/runs/run-20260609-181031.987654321-small-trunk-1x256-1x128/
+checkpoints/runs/run-20260609-181031.987654321-deeper-dense-1x256-2x128/
 ```
 
 Do not pass `--run-label` with `--resume`; resumed runs keep their existing run

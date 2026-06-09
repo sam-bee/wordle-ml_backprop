@@ -3,7 +3,7 @@
 ENV_FILE := .env
 ENV_EXAMPLE_FILE := .env.example
 
-RUN_LABEL ?= deeper-dense-1x256-1x128
+RUN_LABEL ?= deeper-dense-1x256-2x128
 SMOKE_RUN_LABEL ?= smoke-$(RUN_LABEL)
 
 build:

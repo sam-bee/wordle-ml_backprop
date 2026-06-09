@@ -69,14 +69,14 @@ To make the run key readable in TensorBoard, pass `--run-label` when starting a
 new training run:
 
 ```sh
-go run ./cmd/train --run-label "small trunk 1x256 1x128"
+go run ./cmd/train --run-label "deeper dense 1x256 2x128"
 ```
 
 The label is sanitized and appended to the run directory, so TensorBoard shows a
 run key like:
 
 ```text
-run-20260609-181031.987654321-small-trunk-1x256-1x128/tensorboard
+run-20260609-181031.987654321-deeper-dense-1x256-2x128/tensorboard
 ```
 
 `--run-label` is only for new runs. Resumed runs keep their existing run id.
