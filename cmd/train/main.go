@@ -39,6 +39,7 @@ func main() {
 	maxTrainBatches := flags.Int("max-train-batches", 0, "maximum training batches per epoch; 0 means all")
 	maxValidationBatches := flags.Int("max-validation-batches", 25, "maximum validation batches per evaluation; 0 means all")
 	resume := flags.Bool("resume", false, "resume from the latest checkpoint run")
+	runLabel := flags.String("run-label", "", "optional short label appended to new run ids after path-safe sanitization")
 	flags.Usage = func() {
 		fmt.Fprintf(flags.Output(), "usage: %s [options] [data-root]\n", flags.Name())
 		flags.PrintDefaults()
@@ -64,7 +65,7 @@ func main() {
 		dataRoot = args[0]
 	}
 
-	checkpoints, err := resolveCheckpointPaths(checkpointRootDir, *resume, time.Now().UTC())
+	checkpoints, err := resolveCheckpointPaths(checkpointRootDir, *resume, *runLabel, time.Now().UTC())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "configure checkpoints: %v\n", err)
 		os.Exit(1)
@@ -156,9 +157,10 @@ func main() {
 		*maxValidationBatches,
 	)
 	fmt.Printf(
-		"checkpoint: root=%q run_id=%q run_dir=%q gomlx_dir=%q manifest=%q latest_run_file=%q keep=%d resume=%t loaded=%t latest=%q\n",
+		"checkpoint: root=%q run_id=%q run_label=%q run_dir=%q gomlx_dir=%q manifest=%q latest_run_file=%q keep=%d resume=%t loaded=%t latest=%q\n",
 		checkpoints.RootDir,
 		checkpoints.RunID,
+		checkpoints.RunLabel,
 		checkpoints.RunDir,
 		policyTrainer.CheckpointDir,
 		checkpoints.ManifestPath,
@@ -255,6 +257,7 @@ type checkpointManifest struct {
 	UpdatedAtUTC             string                  `json:"updated_at_utc"`
 	CheckpointRoot           string                  `json:"checkpoint_root"`
 	RunID                    string                  `json:"run_id"`
+	RunLabel                 string                  `json:"run_label,omitempty"`
 	RunDir                   string                  `json:"run_dir"`
 	GoMLXDir                 string                  `json:"gomlx_dir"`
 	TensorBoardDir           string                  `json:"tensorboard_dir"`
@@ -316,6 +319,7 @@ type checkpointPaths struct {
 	RootDir        string
 	RunsDir        string
 	RunID          string
+	RunLabel       string
 	RunDir         string
 	GoMLXDir       string
 	TensorBoardDir string
@@ -378,6 +382,7 @@ func buildCheckpointManifest(
 		UpdatedAtUTC:             time.Now().UTC().Format(time.RFC3339Nano),
 		CheckpointRoot:           checkpoints.RootDir,
 		RunID:                    checkpoints.RunID,
+		RunLabel:                 checkpoints.RunLabel,
 		RunDir:                   checkpoints.RunDir,
 		GoMLXDir:                 policyTrainer.CheckpointDir,
 		TensorBoardDir:           checkpoints.TensorBoardDir,
@@ -409,7 +414,7 @@ func buildCheckpointManifest(
 	}
 }
 
-func resolveCheckpointPaths(rootDir string, resume bool, now time.Time) (checkpointPaths, error) {
+func resolveCheckpointPaths(rootDir string, resume bool, runLabel string, now time.Time) (checkpointPaths, error) {
 	paths := checkpointPaths{
 		RootDir:       rootDir,
 		RunsDir:       filepath.Join(rootDir, checkpointRunsDir),
@@ -417,6 +422,9 @@ func resolveCheckpointPaths(rootDir string, resume bool, now time.Time) (checkpo
 		Resume:        resume,
 	}
 	if resume {
+		if strings.TrimSpace(runLabel) != "" {
+			return paths, fmt.Errorf("--run-label cannot be used with --resume")
+		}
 		content, err := os.ReadFile(paths.LatestRunPath)
 		if err != nil {
 			return paths, fmt.Errorf("read latest run file %s: %w", paths.LatestRunPath, err)
@@ -425,8 +433,17 @@ func resolveCheckpointPaths(rootDir string, resume bool, now time.Time) (checkpo
 		if err := validateRunID(paths.RunID); err != nil {
 			return paths, fmt.Errorf("latest run file %s: %w", paths.LatestRunPath, err)
 		}
+		paths.RunLabel = labelFromRunID(paths.RunID)
 	} else {
+		label, err := sanitizeRunLabel(runLabel)
+		if err != nil {
+			return paths, err
+		}
+		paths.RunLabel = label
 		paths.RunID = fmt.Sprintf("run-%s", now.Format("20060102-150405.000000000"))
+		if label != "" {
+			paths.RunID += "-" + label
+		}
 	}
 
 	paths.RunDir = filepath.Join(paths.RunsDir, paths.RunID)
@@ -434,6 +451,53 @@ func resolveCheckpointPaths(rootDir string, resume bool, now time.Time) (checkpo
 	paths.TensorBoardDir = filepath.Join(paths.RunDir, checkpointTelemetryDir)
 	paths.ManifestPath = filepath.Join(paths.RunDir, manifestFileName)
 	return paths, nil
+}
+
+func sanitizeRunLabel(label string) (string, error) {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return "", nil
+	}
+
+	var builder strings.Builder
+	lastWasSeparator := false
+	for _, r := range label {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			builder.WriteRune(r + ('a' - 'A'))
+			lastWasSeparator = false
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			builder.WriteRune(r)
+			lastWasSeparator = false
+		case r == '-' || r == '_' || r == '.' || r == ' ' || r == '\t':
+			if builder.Len() > 0 && !lastWasSeparator {
+				builder.WriteByte('-')
+				lastWasSeparator = true
+			}
+		default:
+			if builder.Len() > 0 && !lastWasSeparator {
+				builder.WriteByte('-')
+				lastWasSeparator = true
+			}
+		}
+	}
+
+	sanitized := strings.Trim(builder.String(), "-")
+	if sanitized == "" {
+		return "", fmt.Errorf("run label %q has no path-safe characters", label)
+	}
+	if len(sanitized) > 60 {
+		return "", fmt.Errorf("run label %q is too long after sanitization; keep it to 60 characters or fewer", label)
+	}
+	return sanitized, nil
+}
+
+func labelFromRunID(runID string) string {
+	const timestampLength = len("run-20060102-150405.000000000")
+	if len(runID) <= timestampLength || !strings.HasPrefix(runID, "run-") || runID[timestampLength] != '-' {
+		return ""
+	}
+	return runID[timestampLength+1:]
 }
 
 func validateRunID(runID string) error {

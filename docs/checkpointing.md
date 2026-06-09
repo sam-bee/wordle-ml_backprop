@@ -21,12 +21,26 @@ By default, each command invocation starts a fresh run under `checkpoints/runs/<
 `--resume` to load the run id recorded in `checkpoints/latest-run.txt` and continue from that run's latest GoMLX
 checkpoint.
 
+New runs can be given a short TensorBoard-visible label with `--run-label`. The
+label is sanitized and appended to the timestamped run id:
+
+```sh
+go run ./cmd/train --run-label "small trunk 1x256 1x128"
+```
+
+```text
+checkpoints/runs/run-20260609-181031.987654321-small-trunk-1x256-1x128/
+```
+
+Do not pass `--run-label` with `--resume`; resumed runs keep their existing run
+id and TensorBoard key.
+
 The run's `gomlx/` directory is passed to `github.com/gomlx/gomlx/pkg/ml/context/checkpoints`. GoMLX writes one JSON
 metadata file and one binary tensor payload per checkpoint. The binary payload is compressed by GoMLX by default. The
 trainer keeps the latest three GoMLX checkpoints within a run.
 
 `manifest.json` is written by this project after each epoch inside the current run directory. It records the run id,
-latest GoMLX checkpoint name, global step, split summaries, action vocabulary source, trainer configuration,
+optional run label, latest GoMLX checkpoint name, global step, split summaries, action vocabulary source, trainer configuration,
 backend/device description, TensorBoard event-file path, loss summaries, and VCS settings when available.
 
 The trainer configuration includes the initial learning rate and whether GoMLX SGD learning-rate decay was enabled for

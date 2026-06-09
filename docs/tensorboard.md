@@ -65,6 +65,22 @@ training has created its event file. Because event files are under each run's
 run-20260609-094514.633510746/tensorboard
 ```
 
+To make the run key readable in TensorBoard, pass `--run-label` when starting a
+new training run:
+
+```sh
+go run ./cmd/train --run-label "small trunk 1x256 1x128"
+```
+
+The label is sanitized and appended to the run directory, so TensorBoard shows a
+run key like:
+
+```text
+run-20260609-181031.987654321-small-trunk-1x256-1x128/tensorboard
+```
+
+`--run-label` is only for new runs. Resumed runs keep their existing run id.
+
 The scalar series currently written by `cmd/train` are:
 
 - `epoch`
