@@ -34,7 +34,7 @@ New GoMLX variable scopes for that experiment:
 The old final trunk scope `dense_trunk.hidden1_to_output` is replaced by `dense_trunk.hidden3_to_output` in this
 experiment.
 
-Dense-trunk parameter count changes from 123,584 fp16-equivalent scalars to 156,608. The policy-model dense parameter
+Dense-trunk parameter count changes from 123,584 trainable scalars to 156,608. The policy-model dense parameter
 count changes from 150,528 scalars to 183,552.
 
 ## 2026-06-09: Additional 256-Wide Dense Trunk Layer
@@ -65,5 +65,5 @@ Updated GoMLX variable scopes:
 - `dense_trunk.hidden3_to_hidden4` is a new `128 -> 128` layer
 - `dense_trunk.hidden4_to_output` replaces `dense_trunk.hidden3_to_output` as the final projection
 
-Dense-trunk parameter count changes from 156,608 fp16-equivalent scalars to 222,400. The policy-model dense parameter
+Dense-trunk parameter count changes from 156,608 trainable scalars to 222,400. The policy-model dense parameter
 count changes from 183,552 scalars to 249,344.
