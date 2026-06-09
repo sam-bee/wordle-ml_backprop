@@ -24,6 +24,9 @@ func TestResolveCheckpointPathsStartsFreshRunByDefault(t *testing.T) {
 	if paths.GoMLXDir != filepath.Join(root, checkpointRunsDir, paths.RunID, checkpointGoMLXDir) {
 		t.Fatalf("GoMLXDir = %q", paths.GoMLXDir)
 	}
+	if paths.TensorBoardDir != filepath.Join(root, checkpointRunsDir, paths.RunID, checkpointTelemetryDir) {
+		t.Fatalf("TensorBoardDir = %q", paths.TensorBoardDir)
+	}
 	if paths.ManifestPath != filepath.Join(root, checkpointRunsDir, paths.RunID, manifestFileName) {
 		t.Fatalf("ManifestPath = %q", paths.ManifestPath)
 	}
@@ -48,6 +51,9 @@ func TestResolveCheckpointPathsResumesLatestRun(t *testing.T) {
 	}
 	if paths.GoMLXDir != filepath.Join(root, checkpointRunsDir, "run-existing", checkpointGoMLXDir) {
 		t.Fatalf("GoMLXDir = %q", paths.GoMLXDir)
+	}
+	if paths.TensorBoardDir != filepath.Join(root, checkpointRunsDir, "run-existing", checkpointTelemetryDir) {
+		t.Fatalf("TensorBoardDir = %q", paths.TensorBoardDir)
 	}
 }
 

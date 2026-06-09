@@ -41,8 +41,54 @@ The dummy run writes TensorBoard event files, not JSON or SQLite. It includes tw
 - `validation_delta_from_start`
 - `learning_rate`
 
-Future training integration should write real scalar events under each run directory, for example:
+Real training runs write TensorBoard event files under:
 
 ```text
 checkpoints/runs/<run-id>/tensorboard/
 ```
+
+The training CLI prints the exact event-file path at startup:
+
+```text
+telemetry: tensorboard_dir="..." event_file="..."
+```
+
+TensorBoard watches `checkpoints/runs/`, so a run appears in the UI as soon as
+training has created its event file. Because event files are under each run's
+`tensorboard/` directory, TensorBoard shows real runs with names like:
+
+```text
+run-20260609-094514.633510746/tensorboard
+```
+
+The scalar series currently written by `cmd/train` are:
+
+- `epoch`
+- `learning_rate`
+- `validation_delta_from_start`
+- `train/mean_loss`
+- `train/first_loss`
+- `train/last_loss`
+- `train/batches`
+- `train/samples`
+- `train/batches_per_second`
+- `train/samples_per_second`
+- `train/progress_loss`
+- `train/progress_mean_loss`
+- `train/progress_batches`
+- `train/progress_samples`
+- `train/progress_batches_per_second`
+- `train/progress_samples_per_second`
+- `validation/mean_loss`
+- `validation/first_loss`
+- `validation/last_loss`
+- `validation/batches`
+- `validation/samples`
+- `validation/batches_per_second`
+- `validation/samples_per_second`
+
+The `train/progress_*` series are written at the same cadence as stdout progress logs, controlled by `--log-every`.
+Set `--log-every 0` to disable both stdout progress logs and progress telemetry.
+
+The dummy run is only a container smoke test and can be ignored when real run
+data exists.

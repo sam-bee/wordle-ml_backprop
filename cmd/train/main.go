@@ -14,16 +14,18 @@ import (
 	"github.com/sam-bee/wordle-ml_backprop/internal/actionspace"
 	"github.com/sam-bee/wordle-ml_backprop/internal/data"
 	"github.com/sam-bee/wordle-ml_backprop/internal/model"
+	"github.com/sam-bee/wordle-ml_backprop/internal/telemetry"
 	"github.com/sam-bee/wordle-ml_backprop/internal/training"
 )
 
 const (
-	defaultBatchSize   = 32
-	checkpointRootDir  = "checkpoints"
-	checkpointRunsDir  = "runs"
-	checkpointGoMLXDir = "gomlx"
-	manifestFileName   = "manifest.json"
-	latestRunFileName  = "latest-run.txt"
+	defaultBatchSize       = 32
+	checkpointRootDir      = "checkpoints"
+	checkpointRunsDir      = "runs"
+	checkpointGoMLXDir     = "gomlx"
+	checkpointTelemetryDir = "tensorboard"
+	manifestFileName       = "manifest.json"
+	latestRunFileName      = "latest-run.txt"
 )
 
 func main() {
@@ -129,6 +131,17 @@ func main() {
 		os.Exit(1)
 	}
 	defer policyTrainer.Close()
+
+	telemetryWriter, err := telemetry.NewTensorBoardWriter(checkpoints.TensorBoardDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "build tensorboard telemetry writer: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := telemetryWriter.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "close tensorboard telemetry writer: %v\n", err)
+		}
+	}()
 	fmt.Printf(
 		"trainer: action_count=%d backend=%q device=%q learning_rate=%g learning_rate_decay=%t next_learning_rate=%g rng_seed=%d epochs=%d max_train_batches=%d max_validation_batches=%d\n",
 		policyTrainer.ActionCount,
@@ -155,6 +168,7 @@ func main() {
 		policyTrainer.CheckpointLoaded,
 		policyTrainer.LatestCheckpoint,
 	)
+	fmt.Printf("telemetry: tensorboard_dir=%q event_file=%q\n", checkpoints.TensorBoardDir, telemetryWriter.Path())
 
 	runStarted := time.Now()
 
@@ -164,10 +178,14 @@ func main() {
 		os.Exit(1)
 	}
 	printLossStats("validation before training", initialValidation)
+	if err := writeInitialTelemetry(telemetryWriter, policyTrainer, initialValidation); err != nil {
+		fmt.Fprintf(os.Stderr, "initial telemetry: %v\n", err)
+		os.Exit(1)
+	}
 
 	lastValidation := initialValidation
 	for epoch := 1; epoch <= *epochs; epoch++ {
-		trainStats, err := trainEpoch(policyTrainer, trainSplit, *batchSize, *maxTrainBatches, *logEvery, epoch)
+		trainStats, err := trainEpoch(policyTrainer, trainSplit, *batchSize, *maxTrainBatches, *logEvery, epoch, telemetryWriter)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "epoch %d train: %v\n", epoch, err)
 			os.Exit(1)
@@ -182,6 +200,10 @@ func main() {
 		printLossStats(fmt.Sprintf("epoch %d validation summary", epoch), lastValidation)
 		validationDelta := lastValidation.MeanLoss() - initialValidation.MeanLoss()
 		fmt.Printf("epoch %d validation_delta_from_start=%.6f\n", epoch, validationDelta)
+		if err := writeEpochTelemetry(telemetryWriter, policyTrainer, epoch, trainStats, lastValidation, validationDelta); err != nil {
+			fmt.Fprintf(os.Stderr, "epoch %d telemetry: %v\n", epoch, err)
+			os.Exit(1)
+		}
 
 		latestCheckpoint, err := policyTrainer.SaveCheckpoint()
 		if err != nil {
@@ -203,6 +225,7 @@ func main() {
 			lastValidation,
 			validationDelta,
 			latestCheckpoint,
+			telemetryWriter.Path(),
 			checkpoints,
 		)
 		if err := writeCheckpointManifest(checkpoints.ManifestPath, manifest); err != nil {
@@ -234,6 +257,8 @@ type checkpointManifest struct {
 	RunID                    string                  `json:"run_id"`
 	RunDir                   string                  `json:"run_dir"`
 	GoMLXDir                 string                  `json:"gomlx_dir"`
+	TensorBoardDir           string                  `json:"tensorboard_dir"`
+	TensorBoardEventFile     string                  `json:"tensorboard_event_file"`
 	LatestGoMLXCheckpoint    string                  `json:"latest_gomlx_checkpoint"`
 	LatestRunFile            string                  `json:"latest_run_file"`
 	GoMLXCheckpointKeep      int                     `json:"gomlx_checkpoint_keep"`
@@ -288,14 +313,15 @@ type lossSummary struct {
 }
 
 type checkpointPaths struct {
-	RootDir       string
-	RunsDir       string
-	RunID         string
-	RunDir        string
-	GoMLXDir      string
-	ManifestPath  string
-	LatestRunPath string
-	Resume        bool
+	RootDir        string
+	RunsDir        string
+	RunID          string
+	RunDir         string
+	GoMLXDir       string
+	TensorBoardDir string
+	ManifestPath   string
+	LatestRunPath  string
+	Resume         bool
 }
 
 func (stats *lossStats) Add(batch data.Batch, loss float64) {
@@ -344,6 +370,7 @@ func buildCheckpointManifest(
 	lastValidation lossStats,
 	validationDelta float64,
 	latestCheckpoint string,
+	tensorboardEventFile string,
 	checkpoints checkpointPaths,
 ) checkpointManifest {
 	return checkpointManifest{
@@ -353,6 +380,8 @@ func buildCheckpointManifest(
 		RunID:                    checkpoints.RunID,
 		RunDir:                   checkpoints.RunDir,
 		GoMLXDir:                 policyTrainer.CheckpointDir,
+		TensorBoardDir:           checkpoints.TensorBoardDir,
+		TensorBoardEventFile:     tensorboardEventFile,
 		LatestGoMLXCheckpoint:    latestCheckpoint,
 		LatestRunFile:            checkpoints.LatestRunPath,
 		GoMLXCheckpointKeep:      policyTrainer.CheckpointKeep,
@@ -402,6 +431,7 @@ func resolveCheckpointPaths(rootDir string, resume bool, now time.Time) (checkpo
 
 	paths.RunDir = filepath.Join(paths.RunsDir, paths.RunID)
 	paths.GoMLXDir = filepath.Join(paths.RunDir, checkpointGoMLXDir)
+	paths.TensorBoardDir = filepath.Join(paths.RunDir, checkpointTelemetryDir)
 	paths.ManifestPath = filepath.Join(paths.RunDir, manifestFileName)
 	return paths, nil
 }
@@ -513,7 +543,93 @@ func writeLatestRunID(path, runID string) error {
 	return os.Rename(tmpPath, path)
 }
 
-func trainEpoch(policyTrainer *training.PolicyTrainer, split *data.Split, batchSize, maxBatches, logEvery, epoch int) (lossStats, error) {
+func writeInitialTelemetry(writer *telemetry.TensorBoardWriter, policyTrainer *training.PolicyTrainer, validation lossStats) error {
+	step := policyTrainer.GlobalStep()
+	if err := writeLossStatsTelemetry(writer, "validation", step, validation); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, "validation_delta_from_start", step, 0); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, "learning_rate", step, policyTrainer.NextLearningRate()); err != nil {
+		return err
+	}
+	return writeTelemetryScalar(writer, "epoch", step, 0)
+}
+
+func writeEpochTelemetry(writer *telemetry.TensorBoardWriter, policyTrainer *training.PolicyTrainer, epoch int, trainStats, validationStats lossStats, validationDelta float64) error {
+	step := policyTrainer.GlobalStep()
+	if err := writeTelemetryScalar(writer, "epoch", step, float64(epoch)); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, "learning_rate", step, policyTrainer.NextLearningRate()); err != nil {
+		return err
+	}
+	if err := writeLossStatsTelemetry(writer, "train", step, trainStats); err != nil {
+		return err
+	}
+	if err := writeLossStatsTelemetry(writer, "validation", step, validationStats); err != nil {
+		return err
+	}
+	return writeTelemetryScalar(writer, "validation_delta_from_start", step, validationDelta)
+}
+
+func writeTrainProgressTelemetry(writer *telemetry.TensorBoardWriter, policyTrainer *training.PolicyTrainer, epoch int, stats lossStats) error {
+	step := policyTrainer.GlobalStep()
+	if err := writeTelemetryScalar(writer, "epoch", step, float64(epoch)); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, "learning_rate", step, policyTrainer.NextLearningRate()); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, "train/progress_loss", step, stats.Last); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, "train/progress_mean_loss", step, stats.MeanLoss()); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, "train/progress_batches", step, float64(stats.Batches)); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, "train/progress_samples", step, float64(stats.Samples)); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, "train/progress_batches_per_second", step, stats.BatchesPerSecond()); err != nil {
+		return err
+	}
+	return writeTelemetryScalar(writer, "train/progress_samples_per_second", step, stats.SamplesPerSecond())
+}
+
+func writeLossStatsTelemetry(writer *telemetry.TensorBoardWriter, prefix string, step int64, stats lossStats) error {
+	if err := writeTelemetryScalar(writer, prefix+"/mean_loss", step, stats.MeanLoss()); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, prefix+"/first_loss", step, stats.First); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, prefix+"/last_loss", step, stats.Last); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, prefix+"/batches", step, float64(stats.Batches)); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, prefix+"/samples", step, float64(stats.Samples)); err != nil {
+		return err
+	}
+	if err := writeTelemetryScalar(writer, prefix+"/batches_per_second", step, stats.BatchesPerSecond()); err != nil {
+		return err
+	}
+	return writeTelemetryScalar(writer, prefix+"/samples_per_second", step, stats.SamplesPerSecond())
+}
+
+func writeTelemetryScalar(writer *telemetry.TensorBoardWriter, tag string, step int64, value float64) error {
+	if err := writer.WriteScalar(tag, step, value); err != nil {
+		return fmt.Errorf("write %s at step %d: %w", tag, step, err)
+	}
+	return nil
+}
+
+func trainEpoch(policyTrainer *training.PolicyTrainer, split *data.Split, batchSize, maxBatches, logEvery, epoch int, telemetryWriter *telemetry.TensorBoardWriter) (lossStats, error) {
 	iterator, err := data.NewBatchIterator(split, batchSize)
 	if err != nil {
 		return lossStats{}, err
@@ -537,6 +653,11 @@ func trainEpoch(policyTrainer *training.PolicyTrainer, split *data.Split, batchS
 		stats.Elapsed = time.Since(started)
 		if logEvery > 0 && stats.Batches%logEvery == 0 {
 			fmt.Printf("epoch %d train progress: batches=%d samples=%d loss=%.6f mean_loss=%.6f elapsed=%s batches_per_sec=%.2f samples_per_sec=%.2f\n", epoch, stats.Batches, stats.Samples, stats.Last, stats.MeanLoss(), formatDuration(stats.Elapsed), stats.BatchesPerSecond(), stats.SamplesPerSecond())
+			if telemetryWriter != nil {
+				if err := writeTrainProgressTelemetry(telemetryWriter, policyTrainer, epoch, stats); err != nil {
+					return lossStats{}, fmt.Errorf("batch %d telemetry: %w", stats.Batches, err)
+				}
+			}
 		}
 	}
 	if stats.Batches == 0 {

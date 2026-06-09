@@ -15,8 +15,7 @@ The project currently:
 4. Reports training and validation loss during training.
 5. Saves native GoMLX checkpoints plus a project manifest.
 6. Provides a small play CLI for inspecting checkpoint-backed policy choices.
-7. Provides a Dockerized TensorBoard container with a dummy telemetry run; real training-to-TensorBoard event writing is
-   still a follow-up.
+7. Writes TensorBoard scalar telemetry for training runs and provides a Dockerized TensorBoard container for viewing it.
 
 ## Non-Goals For Now
 
