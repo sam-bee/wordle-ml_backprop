@@ -224,7 +224,7 @@ remaining future slots contain zeroes
 The 321-value vector above is the direct input to the dense trunk:
 
 ```text
-321 -> 256 -> 256 -> 256 -> 256 -> 128 -> 128 -> 128 -> 128 -> 128 -> 64
+321 -> 256 -> 256 -> 128 -> 128 -> 64
 ```
 
 Use ReLU after each 256-value hidden layer and after each 128-value hidden layer. Do not apply an activation to the

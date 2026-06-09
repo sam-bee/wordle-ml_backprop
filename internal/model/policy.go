@@ -24,13 +24,8 @@ const (
 	DenseTrunkInputDim = 1 + data.MaxTurns*EncodedTurnFeatureDim
 	DenseTrunkHidden0  = 256
 	DenseTrunkHidden1  = 256
-	DenseTrunkHidden2  = 256
-	DenseTrunkHidden3  = 256
-	DenseTrunkHidden4  = 128
-	DenseTrunkHidden5  = 128
-	DenseTrunkHidden6  = 128
-	DenseTrunkHidden7  = 128
-	DenseTrunkHidden8  = 128
+	DenseTrunkHidden2  = 128
+	DenseTrunkHidden3  = 128
 	PolicyVectorDim    = 64
 
 	FixedActionFeatureDim     = 26
@@ -79,12 +74,7 @@ func PolicyVector(ctx *context.Context, turnFeatures, occupiedTurns, virginGrid 
 	hidden1 := activations.Relu(dense(trunk.In("hidden0_to_hidden1"), hidden0, DenseTrunkHidden1))
 	hidden2 := activations.Relu(dense(trunk.In("hidden1_to_hidden2"), hidden1, DenseTrunkHidden2))
 	hidden3 := activations.Relu(dense(trunk.In("hidden2_to_hidden3"), hidden2, DenseTrunkHidden3))
-	hidden4 := activations.Relu(dense(trunk.In("hidden3_to_hidden4"), hidden3, DenseTrunkHidden4))
-	hidden5 := activations.Relu(dense(trunk.In("hidden4_to_hidden5"), hidden4, DenseTrunkHidden5))
-	hidden6 := activations.Relu(dense(trunk.In("hidden5_to_hidden6"), hidden5, DenseTrunkHidden6))
-	hidden7 := activations.Relu(dense(trunk.In("hidden6_to_hidden7"), hidden6, DenseTrunkHidden7))
-	hidden8 := activations.Relu(dense(trunk.In("hidden7_to_hidden8"), hidden7, DenseTrunkHidden8))
-	return dense(trunk.In("hidden8_to_output"), hidden8, PolicyVectorDim)
+	return dense(trunk.In("hidden3_to_output"), hidden3, PolicyVectorDim)
 }
 
 // EncodeTurns applies the shared per-turn encoder and zeroes unoccupied slots.

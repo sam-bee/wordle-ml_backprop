@@ -131,3 +131,33 @@ Updated GoMLX variable scopes:
 
 Dense-trunk parameter count changes from 353,984 trainable scalars to 387,008. The policy-model dense parameter count
 changes from 380,928 scalars to 413,952.
+
+## 2026-06-09: Reduced Dense Trunk Depth Experiment
+
+The dense-trunk depth experiment was reduced to keep only one extra 256-neuron hidden layer and one extra 128-neuron
+hidden layer compared with the original dense trunk.
+
+Previous experimental dense trunk:
+
+```text
+321 -> 256 -> 256 -> 256 -> 256 -> 128 -> 128 -> 128 -> 128 -> 128 -> 64
+```
+
+Updated experimental dense trunk:
+
+```text
+321 -> 256 -> 256 -> 128 -> 128 -> 64
+```
+
+The remaining hidden layers use ReLU activation. The final 64-value policy vector remains linear, with no output
+activation or normalization.
+
+Updated GoMLX variable scopes:
+
+- `dense_trunk.hidden0_to_hidden1` remains the extra `256 -> 256` layer
+- `dense_trunk.hidden1_to_hidden2` is now `256 -> 128`
+- `dense_trunk.hidden2_to_hidden3` remains the extra `128 -> 128` layer
+- `dense_trunk.hidden3_to_output` replaces `dense_trunk.hidden8_to_output` as the final projection
+
+Dense-trunk parameter count changes from 387,008 trainable scalars to 205,888. The policy-model dense parameter count
+changes from 413,952 scalars to 232,832.
