@@ -1,7 +1,10 @@
-.PHONY: build test smoke-train full-train resume-full-train tensorboard-up tensorboard-trash ensure-env
+.PHONY: build test smoke-train full-train resume-full-train evaluate-validation tensorboard-up tensorboard-trash ensure-env
 
 ENV_FILE := .env
 ENV_EXAMPLE_FILE := .env.example
+MODEL_WEIGHTS ?=
+MODEL_METADATA ?=
+EVALUATE_ARGS ?=
 
 build:
 	go build -o /tmp/wordle-backprop-train ./cmd/train
@@ -19,6 +22,11 @@ full-train:
 
 resume-full-train:
 	go run ./cmd/train --batch-size 32 --epochs 1 --learning-rate 0.05 --max-train-batches 0 --max-validation-batches 0 --log-every 50 --resume
+
+evaluate-validation:
+	@test -n "$(MODEL_WEIGHTS)" || (echo "MODEL_WEIGHTS is required" >&2; exit 2)
+	@test -n "$(MODEL_METADATA)" || (echo "MODEL_METADATA is required" >&2; exit 2)
+	go run ./cmd/evaluate --model-weights "$(MODEL_WEIGHTS)" --model-metadata "$(MODEL_METADATA)" $(EVALUATE_ARGS)
 
 ensure-env:
 	@if [ ! -f "$(ENV_FILE)" ]; then \

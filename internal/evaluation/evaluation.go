@@ -11,8 +11,11 @@ import (
 )
 
 const (
-	MaxEpisodeScore = 15
-	MaxWordleTurns  = 6
+	MaxEpisodeScore        = 15
+	MaxWordleTurns         = 6
+	LossGreenPositionScore = 0.5
+	LossYellowLetterScore  = 0.25
+	LossGreyLetterScore    = 1.0 / 16.0
 )
 
 type Predictor interface {
@@ -28,14 +31,16 @@ type EpisodeResult struct {
 	Solution  data.Word `json:"solution"`
 	Won       bool      `json:"won"`
 	TurnsUsed int       `json:"turns_used"`
-	Score     int       `json:"score"`
+	Score     float64   `json:"score"`
 }
 
 type Summary struct {
 	Solutions        int     `json:"solutions"`
-	RawScore         int     `json:"raw_score"`
-	MaxScore         int     `json:"max_score"`
+	RawScore         float64 `json:"raw_score"`
+	MaxScore         float64 `json:"max_score"`
 	ScorePercent     float64 `json:"score_percent"`
+	WinScore         float64 `json:"win_score"`
+	LossCreditScore  float64 `json:"loss_credit_score"`
 	Wins             int     `json:"wins"`
 	Losses           int     `json:"losses"`
 	AverageWinTurns  float64 `json:"average_turns_on_wins"`
@@ -129,21 +134,56 @@ func RunEpisode(solution data.Word, maxTurns int, predictor Predictor) (EpisodeR
 		Solution:  solution,
 		Won:       false,
 		TurnsUsed: maxTurns,
-		Score:     0,
+		Score:     LossFeedbackScore(turns),
 	}, nil
 }
 
-func ScoreEpisode(won bool, turnsUsed int) int {
+func ScoreEpisode(won bool, turnsUsed int) float64 {
 	if !won {
 		return 0
 	}
-	return 10 + (MaxWordleTurns - turnsUsed)
+	return float64(10 + (MaxWordleTurns - turnsUsed))
+}
+
+func LossFeedbackScore(turns []Turn) float64 {
+	greenPositions := make(map[int]bool)
+	greenLetters := make(map[byte]bool)
+	yellowLetters := make(map[byte]bool)
+	greyLetters := make(map[byte]bool)
+
+	for _, turn := range turns {
+		for position, feedback := range turn.Feedback {
+			letter := turn.Guess[position]
+			switch feedback {
+			case data.FeedbackGreen:
+				greenPositions[position] = true
+				greenLetters[letter] = true
+			case data.FeedbackYellow:
+				yellowLetters[letter] = true
+			case data.FeedbackGrey:
+				greyLetters[letter] = true
+			}
+		}
+	}
+
+	score := float64(len(greenPositions)) * LossGreenPositionScore
+	for letter := range yellowLetters {
+		if !greenLetters[letter] {
+			score += LossYellowLetterScore
+		}
+	}
+	for letter := range greyLetters {
+		if !greenLetters[letter] && !yellowLetters[letter] {
+			score += LossGreyLetterScore
+		}
+	}
+	return score
 }
 
 func Summarize(results []EpisodeResult, validationSource string) Summary {
 	summary := Summary{
 		Solutions:        len(results),
-		MaxScore:         len(results) * MaxEpisodeScore,
+		MaxScore:         float64(len(results) * MaxEpisodeScore),
 		EpisodeMaxScore:  MaxEpisodeScore,
 		Selection:        "highest-scoring unguessed action; no candidate-list filtering",
 		ValidationSource: validationSource,
@@ -154,16 +194,18 @@ func Summarize(results []EpisodeResult, validationSource string) Summary {
 		summary.RawScore += result.Score
 		if result.Won {
 			summary.Wins++
+			summary.WinScore += result.Score
 			winTurnSum += result.TurnsUsed
 			if result.TurnsUsed >= 1 && result.TurnsUsed <= MaxWordleTurns {
 				histogram[result.TurnsUsed]++
 			}
 		} else {
 			summary.Losses++
+			summary.LossCreditScore += result.Score
 		}
 	}
 	if summary.MaxScore > 0 {
-		summary.ScorePercent = 100 * float64(summary.RawScore) / float64(summary.MaxScore)
+		summary.ScorePercent = 100 * summary.RawScore / summary.MaxScore
 	}
 	if summary.Wins > 0 {
 		summary.AverageWinTurns = float64(winTurnSum) / float64(summary.Wins)
