@@ -6,6 +6,7 @@ ENV_EXAMPLE_FILE := .env.example
 build:
 	go build -o /tmp/wordle-backprop-train ./cmd/train
 	go build -o /tmp/wordle-backprop-play ./cmd/play
+	go build -o /tmp/wordle-backprop-evaluate ./cmd/evaluate
 
 test:
 	go test ./...
