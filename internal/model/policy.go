@@ -24,7 +24,7 @@ const (
 	DenseTrunkInputDim = 1 + data.MaxTurns*EncodedTurnFeatureDim
 	DenseTrunkHidden0  = 256
 	DenseTrunkHidden1  = 128
-	PolicyVectorDim    = 64
+	PolicyVectorDim    = 48
 
 	FixedActionFeatureDim     = 26
 	TrainableActionFeatureDim = PolicyVectorDim - FixedActionFeatureDim
@@ -57,7 +57,7 @@ func PolicyModel(ctx *context.Context, _ any, inputs []*graph.Node) []*graph.Nod
 	return []*graph.Node{logits}
 }
 
-// PolicyVector maps a Wordle decision state to the 64-dimensional policy vector.
+// PolicyVector maps a Wordle decision state to the policy vector.
 func PolicyVector(ctx *context.Context, turnFeatures, occupiedTurns, virginGrid *graph.Node) *graph.Node {
 	validateDecisionStateInputs(turnFeatures, occupiedTurns, virginGrid)
 
