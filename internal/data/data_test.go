@@ -53,6 +53,25 @@ func TestLoadSplitParsesFixture(t *testing.T) {
 	}
 }
 
+func TestLoadSplitParsesMiniSplit(t *testing.T) {
+	dir := t.TempDir()
+	metadata := fixtureMetadata()
+	metadata.Split = SplitMini
+	metadata.SplitID = 4
+	metadata.BinaryFile = "wordle-mini.bin"
+	records := fixtureRecords(t, int(metadata.RecordCount))
+	writeFixture(t, dir, metadata, records)
+
+	split, err := LoadSplit(dir)
+	if err != nil {
+		t.Fatalf("LoadSplit() error = %v", err)
+	}
+
+	if split.Metadata.Split != SplitMini {
+		t.Fatalf("split.Metadata.Split = %q, want %q", split.Metadata.Split, SplitMini)
+	}
+}
+
 func TestLoadSplitRejectsUnsupportedMetadataVersion(t *testing.T) {
 	dir := t.TempDir()
 	metadata := fixtureMetadata()

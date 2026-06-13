@@ -38,6 +38,8 @@ func main() {
 	logEvery := flags.Int("log-every", 50, "print training progress every n batches; 0 disables batch progress logs")
 	maxTrainBatches := flags.Int("max-train-batches", 0, "maximum training batches per epoch; 0 means all")
 	maxValidationBatches := flags.Int("max-validation-batches", 25, "maximum validation batches per evaluation; 0 means all")
+	trainSplitName := flags.String("train-split", string(data.SplitTrain), "data split directory to use for training")
+	validationSplitName := flags.String("validation-split", string(data.SplitValidation), "data split directory to use for validation")
 	resume := flags.Bool("resume", false, "resume from the latest checkpoint run")
 	flags.Usage = func() {
 		fmt.Fprintf(flags.Output(), "usage: %s [options] [data-root]\n", flags.Name())
@@ -72,29 +74,13 @@ func main() {
 
 	fmt.Println("wordle backprop trainer starting")
 
-	splits := make(map[data.SplitName]*data.Split, len(data.KnownSplits))
-	for _, splitName := range data.KnownSplits {
-		splitDir := filepath.Join(dataRoot, string(splitName))
-		split, err := data.LoadSplit(splitDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "load %s split: %v\n", splitName, err)
-			os.Exit(1)
-		}
-		splits[splitName] = split
-
-		fmt.Printf(
-			"%s: samples=%d solutions=%d top_k=%d max_turns=%d guess_vocab=%d record_size=%d\n",
-			split.Metadata.Split,
-			split.SampleCount(),
-			split.Metadata.SolutionCount,
-			split.Metadata.TopK,
-			split.Metadata.MaxTurns,
-			split.Metadata.GuessVocabSize,
-			split.Metadata.RecordSizeBytes,
-		)
+	trainName := data.SplitName(*trainSplitName)
+	validationName := data.SplitName(*validationSplitName)
+	splits, trainSplit, validationSplit, err := loadTrainingSplits(dataRoot, trainName, validationName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configure data splits: %v\n", err)
+		os.Exit(1)
 	}
-	trainSplit := splits[data.SplitTrain]
-	validationSplit := splits[data.SplitValidation]
 
 	iterator, err := data.NewBatchIterator(trainSplit, *batchSize)
 	if err != nil {
@@ -322,6 +308,80 @@ type checkpointPaths struct {
 	ManifestPath   string
 	LatestRunPath  string
 	Resume         bool
+}
+
+func loadTrainingSplits(dataRoot string, trainSplitName, validationSplitName data.SplitName) (map[data.SplitName]*data.Split, *data.Split, *data.Split, error) {
+	splitNames := splitNamesForTrainingConfig(trainSplitName, validationSplitName)
+	splits := make(map[data.SplitName]*data.Split, len(splitNames))
+	for _, splitName := range splitNames {
+		if err := validateRequestedSplitName(splitName); err != nil {
+			return nil, nil, nil, err
+		}
+		splitDir := filepath.Join(dataRoot, string(splitName))
+		split, err := data.LoadSplit(splitDir)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("load %s split: %w", splitName, err)
+		}
+		if split.Metadata.Split != splitName {
+			return nil, nil, nil, fmt.Errorf("load %s split: metadata split is %q", splitName, split.Metadata.Split)
+		}
+		splits[splitName] = split
+		printSplitSummary(split)
+	}
+
+	trainSplit, ok := splits[trainSplitName]
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("training split %q was not loaded", trainSplitName)
+	}
+	validationSplit, ok := splits[validationSplitName]
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("validation split %q was not loaded", validationSplitName)
+	}
+	return splits, trainSplit, validationSplit, nil
+}
+
+func splitNamesForTrainingConfig(trainSplitName, validationSplitName data.SplitName) []data.SplitName {
+	if trainSplitName == data.SplitTrain && validationSplitName == data.SplitValidation {
+		return append([]data.SplitName(nil), data.KnownSplits[:]...)
+	}
+	return uniqueSplitNames(trainSplitName, validationSplitName)
+}
+
+func uniqueSplitNames(splitNames ...data.SplitName) []data.SplitName {
+	unique := make([]data.SplitName, 0, len(splitNames))
+	seen := make(map[data.SplitName]bool, len(splitNames))
+	for _, splitName := range splitNames {
+		if seen[splitName] {
+			continue
+		}
+		seen[splitName] = true
+		unique = append(unique, splitName)
+	}
+	return unique
+}
+
+func validateRequestedSplitName(splitName data.SplitName) error {
+	raw := string(splitName)
+	if raw == "" {
+		return fmt.Errorf("split name is empty")
+	}
+	if filepath.Base(raw) != raw || strings.ContainsAny(raw, `/\`) {
+		return fmt.Errorf("split name %q must be a single path component", raw)
+	}
+	return nil
+}
+
+func printSplitSummary(split *data.Split) {
+	fmt.Printf(
+		"%s: samples=%d solutions=%d top_k=%d max_turns=%d guess_vocab=%d record_size=%d\n",
+		split.Metadata.Split,
+		split.SampleCount(),
+		split.Metadata.SolutionCount,
+		split.Metadata.TopK,
+		split.Metadata.MaxTurns,
+		split.Metadata.GuessVocabSize,
+		split.Metadata.RecordSizeBytes,
+	)
 }
 
 func (stats *lossStats) Add(batch data.Batch, loss float64) {

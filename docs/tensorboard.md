@@ -94,5 +94,55 @@ The scalar series currently written by `cmd/train` are:
 The `train/progress_*` series are written at the same cadence as stdout progress logs, controlled by `--log-every`.
 Set `--log-every 0` to disable both stdout progress logs and progress telemetry.
 
+## Programmatic Scalar Extraction
+
+Use the local scalar exporter to extract scalar points directly from disk without starting the TensorBoard UI. This is
+the preferred way to assess experiments programmatically because it reads the TensorBoard event files written by
+`cmd/train` and outputs plain CSV.
+
+The two main experiment-comparison series are:
+
+- `train/mean_loss`
+- `validation_delta_from_start`
+
+The latest run id is stored in:
+
+```text
+checkpoints/latest-run.txt
+```
+
+Each run's event files are under:
+
+```text
+checkpoints/runs/<run-id>/tensorboard/
+```
+
+To print both series for the latest run as CSV:
+
+```sh
+go run ./cmd/export-scalars
+```
+
+The output columns are:
+
+```text
+run_id,series,step,wall_time,value
+```
+
+To read a specific run instead of the latest run:
+
+```sh
+go run ./cmd/export-scalars --run run-20260613-165820.441895744
+```
+
+To export a different set of scalar tags:
+
+```sh
+go run ./cmd/export-scalars --tags train/mean_loss,validation/mean_loss,validation_delta_from_start
+```
+
+For a final-run summary only, `checkpoints/runs/<run-id>/manifest.json` includes `last_train.mean_loss` and
+`validation_delta_from_start`. Use `cmd/export-scalars` when the full curve is needed.
+
 The dummy run is only a container smoke test and can be ignored when real run
 data exists.

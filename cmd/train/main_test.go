@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/sam-bee/wordle-ml_backprop/internal/data"
 )
 
 func TestResolveCheckpointPathsStartsFreshRunByDefault(t *testing.T) {
@@ -66,5 +68,33 @@ func TestResolveCheckpointPathsRejectsUnsafeLatestRun(t *testing.T) {
 
 	if _, err := resolveCheckpointPaths(root, true, time.Time{}); err == nil {
 		t.Fatal("resolveCheckpointPaths() succeeded, want error")
+	}
+}
+
+func TestSplitNamesForTrainingConfigDefaultsToCanonicalSplits(t *testing.T) {
+	got := splitNamesForTrainingConfig(data.SplitTrain, data.SplitValidation)
+	want := data.KnownSplits[:]
+
+	if len(got) != len(want) {
+		t.Fatalf("splitNamesForTrainingConfig() returned %d splits, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("splitNamesForTrainingConfig()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestSplitNamesForTrainingConfigMiniUsesMiniOnce(t *testing.T) {
+	got := splitNamesForTrainingConfig(data.SplitMini, data.SplitMini)
+	want := []data.SplitName{data.SplitMini}
+
+	if len(got) != len(want) {
+		t.Fatalf("splitNamesForTrainingConfig() returned %d splits, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("splitNamesForTrainingConfig()[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }

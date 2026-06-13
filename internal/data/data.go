@@ -42,6 +42,7 @@ const (
 	SplitTrain      SplitName = "train"
 	SplitValidation SplitName = "validation"
 	SplitTest       SplitName = "test"
+	SplitMini       SplitName = "mini"
 )
 
 var KnownSplits = [...]SplitName{SplitTrain, SplitValidation, SplitTest}
@@ -263,6 +264,8 @@ func expectedSplitID(split SplitName) (uint32, bool) {
 		return 2, true
 	case SplitTest:
 		return 3, true
+	case SplitMini:
+		return 4, true
 	default:
 		return 0, false
 	}
