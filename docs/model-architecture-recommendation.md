@@ -13,8 +13,9 @@ dense trunk:         321 -> 256 -> 256 -> 128 -> 128 -> 128 -> 64
 output embedding:   26 fixed letter-count features + 38 trainable tail features
 ```
 
-Do not adopt the smaller output tail or flat raw-state encoder yet. Both improved over the seeded baseline on the mini
-dataset, but neither matched the deeper trunk. The smaller tail also hurt when combined with the deeper trunk.
+Do not adopt the smaller output tail, flat raw-state encoder, or transformer state encoder yet. The smaller output tail
+and transformer improved over the seeded baseline on at least one mini run, but neither matched the deeper trunk. The
+smaller tail also hurt when combined with the deeper trunk.
 
 ## Why This Direction
 
@@ -32,7 +33,9 @@ not win. For this small, fixed-length chronological input, the existing shared t
 appears to be a better inductive bias than a single raw flat state vector. Attention remains a plausible future
 direction for richer sequence mixing, but the Transformer motivation is strongest when each position needs to attend to
 other positions through learned interactions: https://arxiv.org/abs/1706.03762. The five-turn Wordle state is short
-enough that the deeper trunk currently captures the useful interactions more cheaply.
+enough that the deeper trunk currently captures the useful interactions more cheaply. A follow-up transformer state
+encoder test used one learned state token, five turn tokens, one self-attention block, and the existing action embedding
+head; it still trailed the deeper dense trunk on final validation loss.
 
 Deep Sets is also not a direct fit for the main state encoder because Wordle turns are chronological, not permutation
 invariant: https://arxiv.org/abs/1703.06114. Set-like aggregation may be useful later for derived constraint features,
@@ -90,6 +93,8 @@ Second-seed check for the baseline and strongest candidates:
 | +3 trunk layers | 20260614 | `run-20260613-173951.122126400` | 9.431856 | 7.514718 | 7.800358 | -1.631498 |
 | +3 trunk layers + smaller tail | 20260613 | `run-20260613-173630.945160937` | 9.175889 | 7.684533 | 7.911773 | -1.264116 |
 | +3 trunk layers + smaller tail | 20260614 | `run-20260613-174126.858588574` | 9.700000 | 7.597196 | 7.850456 | -1.849544 |
+| Transformer state encoder | 20260613 | `run-20260613-180352.340111860` | 32.376084 | 7.816905 | 8.040507 | -24.335576 |
+| Transformer state encoder | 20260614 | `run-20260613-180518.186031000` | 29.058348 | 7.436457 | 7.824831 | -21.233517 |
 
 Two-seed averages:
 
@@ -98,10 +103,12 @@ Two-seed averages:
 | Baseline | 7.746020 | 7.966297 | -1.504558 |
 | +3 trunk layers | 7.557519 | 7.832591 | -1.421998 |
 | +3 trunk layers + smaller tail | 7.640864 | 7.881115 | -1.556830 |
+| Transformer state encoder | 7.626681 | 7.932669 | -22.784547 |
 
 The +3 trunk reduces average final validation mean loss by about `0.1337` versus baseline across the two checked seeds.
 It also beats the combined +3/smaller-tail model by about `0.0485`, so the 38-dimensional trainable output tail should
-stay in place for now.
+stay in place for now. The transformer state encoder beats the baseline average by about `0.0336`, but it is about
+`0.1001` worse than the +3 trunk average, so it is not the next architecture candidate.
 
 ## Next Validation Gate
 
