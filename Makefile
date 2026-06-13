@@ -5,6 +5,7 @@ ENV_EXAMPLE_FILE := .env.example
 MODEL_WEIGHTS ?=
 MODEL_METADATA ?=
 EVALUATE_ARGS ?=
+TRAIN_ARGS ?=
 
 build:
 	go build -o /tmp/wordle-backprop-train ./cmd/train
@@ -16,16 +17,16 @@ test:
 	go test ./...
 
 smoke-train:
-	go run ./cmd/train --batch-size 32 --epochs 1 --learning-rate 0.05 --max-train-batches 2 --max-validation-batches 2 --log-every 1
+	go run ./cmd/train --batch-size 32 --epochs 1 --learning-rate 0.05 --max-train-batches 2 --max-validation-batches 2 --log-every 1 $(TRAIN_ARGS)
 
 full-train:
-	go run ./cmd/train --batch-size 32 --epochs 50 --learning-rate 0.01 --learning-rate-decay --max-train-batches 0 --max-validation-batches 0 --log-every 50
+	go run ./cmd/train --batch-size 32 --epochs 50 --learning-rate 0.01 --learning-rate-decay --max-train-batches 0 --max-validation-batches 0 --log-every 50 $(TRAIN_ARGS)
 
 mini-train:
-	go run ./cmd/train --batch-size 32 --epochs 300 --learning-rate 0.01 --learning-rate-decay --max-train-batches 0 --max-validation-batches 0 --log-every 50 --train-split mini --validation-split mini
+	go run ./cmd/train --batch-size 32 --epochs 300 --learning-rate 0.01 --learning-rate-decay --max-train-batches 0 --max-validation-batches 0 --log-every 50 --train-split mini --validation-split mini $(TRAIN_ARGS)
 
 resume-full-train:
-	go run ./cmd/train --batch-size 32 --epochs 1 --learning-rate 0.05 --max-train-batches 0 --max-validation-batches 0 --log-every 50 --resume
+	go run ./cmd/train --batch-size 32 --epochs 1 --learning-rate 0.05 --max-train-batches 0 --max-validation-batches 0 --log-every 50 --resume $(TRAIN_ARGS)
 
 evaluate-validation:
 	@test -n "$(MODEL_WEIGHTS)" || (echo "MODEL_WEIGHTS is required" >&2; exit 2)

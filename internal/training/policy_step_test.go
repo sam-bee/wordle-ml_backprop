@@ -82,6 +82,21 @@ func TestPolicyTrainerConfigValidation(t *testing.T) {
 	}
 }
 
+func TestPolicyTrainerUsesConfiguredSeed(t *testing.T) {
+	config := DefaultPolicyTrainerConfig()
+	config.Seed = 12345
+
+	trainer, err := NewPolicyTrainer(trainingFixtureVocabulary(t), config)
+	if err != nil {
+		t.Fatalf("NewPolicyTrainer() error = %v", err)
+	}
+	defer trainer.Close()
+
+	if trainer.Seed != config.Seed {
+		t.Fatalf("Seed = %d, want %d", trainer.Seed, config.Seed)
+	}
+}
+
 func TestPolicyLearningRateForStep(t *testing.T) {
 	const learningRate = 0.05
 

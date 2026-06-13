@@ -40,6 +40,7 @@ func main() {
 	maxValidationBatches := flags.Int("max-validation-batches", 25, "maximum validation batches per evaluation; 0 means all")
 	trainSplitName := flags.String("train-split", string(data.SplitTrain), "data split directory to use for training")
 	validationSplitName := flags.String("validation-split", string(data.SplitValidation), "data split directory to use for validation")
+	seed := flags.Int64("seed", 0, "GoMLX RNG seed; 0 uses the current time")
 	resume := flags.Bool("resume", false, "resume from the latest checkpoint run")
 	flags.Usage = func() {
 		fmt.Fprintf(flags.Output(), "usage: %s [options] [data-root]\n", flags.Name())
@@ -109,6 +110,7 @@ func main() {
 	trainerConfig := training.DefaultPolicyTrainerConfig()
 	trainerConfig.LearningRate = *learningRate
 	trainerConfig.LearningRateDecay = *learningRateDecay
+	trainerConfig.Seed = *seed
 	trainerConfig.CheckpointDir = checkpoints.GoMLXDir
 	trainerConfig.CheckpointMustLoad = checkpoints.Resume
 	policyTrainer, err := training.NewPolicyTrainer(vocab, trainerConfig)
