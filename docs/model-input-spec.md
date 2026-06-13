@@ -224,8 +224,9 @@ remaining future slots contain zeroes
 The 321-value vector above is the direct input to the dense trunk:
 
 ```text
-321 -> 256 -> 128 -> 64
+321 -> 256 -> 128 -> 128 -> 64
 ```
 
-Use ReLU after the 256-value hidden layer and after the 128-value hidden layer. Do not apply an activation to the final
-64-value policy vector.
+Use ReLU after the 256-value hidden layer and after both 128-value hidden layers. Do not apply an activation to the final
+64-value trunk vector. The policy output head then maps the trunk vector to a 48-value policy vector without an
+activation.

@@ -72,24 +72,26 @@ Initialize these layers in the policy model:
 | Shared turn encoder | hidden to output | `128 -> 64` | `128` | `0.1250000000` | `64` |
 | Dense trunk | input to hidden 0 | `321 -> 256` | `321` | `0.0789337038` | `256` |
 | Dense trunk | hidden 0 to hidden 1 | `256 -> 128` | `256` | `0.0883883476` | `128` |
-| Dense trunk | hidden 1 to output | `128 -> 64` | `128` | `0.1250000000` | `64` |
+| Dense trunk | hidden 1 to hidden 2 | `128 -> 128` | `128` | `0.1250000000` | `128` |
+| Dense trunk | hidden 2 to output | `128 -> 64` | `128` | `0.1250000000` | `64` |
+| Policy output head | trunk to policy | `64 -> 48` | `64` | `0.1767766953` | `48` |
 
 Total policy-model trainable scalars:
 
 ```text
-weights = 149,888
-biases  = 640
-total   = 150,528
+weights = 169,344
+biases  = 816
+total   = 170,160
 ```
 
-All 149,888 weights are random normal samples. All 640 biases are zero.
+All 169,344 weights are random normal samples. All 816 biases are zero.
 
 ## Output Embedding Structure
 
-Each action word has a 64-value output embedding:
+Each action word has a 48-value output embedding:
 
 ```text
-64 = 26 fixed word features + 38 trainable tail features
+48 = 26 fixed word features + 22 trainable tail features
 ```
 
 The first 26 values are fixed features computed from the action word. They are not random and are not trainable.
@@ -107,9 +109,9 @@ So fixed word features can be:
 -1.0, 1.0, 2.0, 3.0, 4.0, or 5.0
 ```
 
-The remaining 38 values are trainable tail parameters.
+The remaining 22 values are trainable tail parameters.
 
-For each active action row `a` in `0..A-1` and each trainable feature `j` in `0..37`:
+For each active action row `a` in `0..A-1` and each trainable feature `j` in `0..21`:
 
 ```text
 tail[a][j] ~ Normal(mean = 0.0, stddev = output_embedding_tail_stddev)
@@ -126,7 +128,7 @@ Each tail value is independently sampled.
 There are:
 
 ```text
-38 * A
+22 * A
 ```
 
 random output-tail parameters.
@@ -134,12 +136,12 @@ random output-tail parameters.
 ## Action Scoring
 
 The randomized tail values matter because action selection scores each candidate action by dot product with the
-64-value policy vector:
+48-value policy vector:
 
 ```text
 score(action) =
     sum i=0..25  policy[i]      * fixed_word_feature[action][i]
-  + sum j=0..37  policy[26 + j] * tail[action][j]
+  + sum j=0..21  policy[26 + j] * tail[action][j]
 ```
 
 The selected action is the active action word with the highest score.
@@ -151,15 +153,15 @@ Initial random model creation does not standardize or normalize output embedding
 Specifically, during initial random creation:
 
 - fixed 26-value word features are used exactly as described above
-- trainable 38-value tails are sampled from `Normal(0.0, 0.05)`
+- trainable 22-value tails are sampled from `Normal(0.0, 0.05)`
 - no tail row is rescaled to a target norm
-- no full 64-value output embedding is normalized
+- no full 48-value output embedding is normalized
 - no output embedding is clipped to a magnitude range
 
 The expected trainable-tail L2 norm at initialization is approximately:
 
 ```text
-sqrt(38) * 0.05 = 0.3082207001
+sqrt(22) * 0.05 = 0.23452078799
 ```
 
 This is only a distributional expectation, not an enforced value.
@@ -175,13 +177,13 @@ One possible approach is magnitude matching against existing tail rows:
 1. Compute the L2 norm of each existing trainable tail row:
 
    ```text
-   norm(row) = sqrt(sum j=0..37 tail[row][j]^2)
+   norm(row) = sqrt(sum j=0..21 tail[row][j]^2)
    ```
 
 2. Compute the median of those existing row norms. If the row count is even, use the average of the two middle values.
    This median is the target norm.
 
-3. For each newly injected action word, seed a raw 38-value tail from the current model's policy outputs on hint grids
+3. For each newly injected action word, seed a raw 22-value tail from the current model's policy outputs on hint grids
    for that word:
 
    ```text
@@ -200,7 +202,7 @@ One possible approach is magnitude matching against existing tail rows:
 
 6. If the target norm is less than or equal to `1.0e-6`, scale the row to all zeroes.
 
-Only the 38-value trainable tail is norm-matched. The fixed 26-value word-feature prefix is not included in this norm
+Only the 22-value trainable tail is norm-matched. The fixed 26-value word-feature prefix is not included in this norm
 and is not rescaled.
 
 ## Creation Pseudocode
@@ -217,11 +219,13 @@ function make_random_model(action_words, action_count, rng, config):
     initialize_dense_layer(model.encoder_hidden_to_output, 128, 64, rng, config.dense_weight_gain)
     initialize_dense_layer(model.trunk_input_to_hidden0, 321, 256, rng, config.dense_weight_gain)
     initialize_dense_layer(model.trunk_hidden0_to_hidden1, 256, 128, rng, config.dense_weight_gain)
-    initialize_dense_layer(model.trunk_hidden1_to_output, 128, 64, rng, config.dense_weight_gain)
+    initialize_dense_layer(model.trunk_hidden1_to_hidden2, 128, 128, rng, config.dense_weight_gain)
+    initialize_dense_layer(model.trunk_hidden2_to_output, 128, 64, rng, config.dense_weight_gain)
+    initialize_dense_layer(model.policy_output_head, 64, 48, rng, config.dense_weight_gain)
 
     for action_index from 0 to action_count - 1:
         model.action_words[action_index] = action_words[action_index]
-        for feature_index from 0 to 37:
+        for feature_index from 0 to 21:
             value = normal_sample(rng, mean = 0.0, stddev = config.output_embedding_tail_stddev)
             model.tail[action_index][feature_index] = value
 

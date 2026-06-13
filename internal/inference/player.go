@@ -1,12 +1,10 @@
 package inference
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"sort"
-	"strings"
 
 	"github.com/gomlx/gomlx/backends"
 	"github.com/gomlx/gomlx/backends/xla"
@@ -14,8 +12,6 @@ import (
 	"github.com/gomlx/gomlx/pkg/core/tensors"
 	"github.com/gomlx/gomlx/pkg/ml/context"
 	"github.com/gomlx/gomlx/pkg/ml/context/checkpoints"
-	"github.com/gomlx/gomlx/pkg/ml/layers"
-	"github.com/gomlx/gomlx/pkg/ml/layers/activations"
 
 	"github.com/sam-bee/wordle-ml_backprop/internal/actionspace"
 	"github.com/sam-bee/wordle-ml_backprop/internal/data"
@@ -26,13 +22,17 @@ import (
 const backendConfig = "cuda"
 
 type Player struct {
-	backend            backends.Backend
-	exec               *context.Exec
-	fixedActionTensor  *tensors.Tensor
-	vocab              actionspace.Vocabulary
-	BackendDescription string
-	DeviceDescription  string
-	TrunkHiddenDims    []int
+	backend             backends.Backend
+	exec                *context.Exec
+	fixedActionTensor   *tensors.Tensor
+	vocab               actionspace.Vocabulary
+	BackendDescription  string
+	DeviceDescription   string
+	TrunkHiddenDims     []int
+	TrunkOutputDim      int
+	PolicyVectorDim     int
+	TrainableTailDim    int
+	HasPolicyOutputHead bool
 }
 
 type ScoredAction struct {
@@ -42,24 +42,10 @@ type ScoredAction struct {
 	Probability float64
 }
 
-type checkpointMetadata struct {
-	Variables []checkpointVariable `json:"Variables"`
-}
-
-type checkpointVariable struct {
-	ParameterName string `json:"ParameterName"`
-	Dimensions    []int  `json:"Dimensions"`
-	DType         string `json:"DType"`
-}
-
 func NewPlayer(weightsPath, metadataPath string, vocab actionspace.Vocabulary) (*Player, error) {
 	metadata, err := os.ReadFile(metadataPath)
 	if err != nil {
 		return nil, fmt.Errorf("read metadata %s: %w", metadataPath, err)
-	}
-	trunkHiddenDims, err := TrunkHiddenDimsFromMetadata(metadataPath, metadata)
-	if err != nil {
-		return nil, err
 	}
 
 	weights, err := os.ReadFile(weightsPath)
@@ -82,7 +68,7 @@ func NewPlayer(weightsPath, metadataPath string, vocab actionspace.Vocabulary) (
 		backend,
 		ctx.Reuse(),
 		func(ctx *context.Context, turnFeatures, occupiedTurns, virginGrid, fixedActionFeatures *graph.Node) *graph.Node {
-			policy := policyVector(ctx.In("policy_model"), turnFeatures, occupiedTurns, virginGrid, trunkHiddenDims)
+			policy := model.PolicyVector(ctx.In("policy_model"), turnFeatures, occupiedTurns, virginGrid)
 			return model.ActionLogits(ctx.In("output_embeddings"), policy, fixedActionFeatures)
 		},
 	)
@@ -104,13 +90,17 @@ func NewPlayer(weightsPath, metadataPath string, vocab actionspace.Vocabulary) (
 	)
 
 	return &Player{
-		backend:            backend,
-		exec:               exec,
-		fixedActionTensor:  fixedActionTensor,
-		vocab:              vocab,
-		BackendDescription: backend.Description(),
-		DeviceDescription:  backend.DeviceDescription(0),
-		TrunkHiddenDims:    append([]int(nil), trunkHiddenDims...),
+		backend:             backend,
+		exec:                exec,
+		fixedActionTensor:   fixedActionTensor,
+		vocab:               vocab,
+		BackendDescription:  backend.Description(),
+		DeviceDescription:   backend.DeviceDescription(0),
+		TrunkHiddenDims:     []int{model.DenseTrunkHidden0, model.DenseTrunkHidden1, model.DenseTrunkHidden2},
+		TrunkOutputDim:      model.DenseTrunkOutputDim,
+		PolicyVectorDim:     model.PolicyVectorDim,
+		TrainableTailDim:    model.TrainableActionFeatureDim,
+		HasPolicyOutputHead: true,
 	}, nil
 }
 
@@ -194,104 +184,6 @@ func FirstUnguessed(ranked []ScoredAction, guessed map[data.Word]bool) (data.Wor
 		}
 	}
 	return data.Word{}, 0, fmt.Errorf("model action space has no unguessed words")
-}
-
-func TrunkHiddenDimsFromMetadata(path string, content []byte) ([]int, error) {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(content, &raw); err != nil {
-		return nil, fmt.Errorf("parse checkpoint metadata %s: %w", path, err)
-	}
-	if _, ok := raw["latest_gomlx_checkpoint"]; ok {
-		return nil, fmt.Errorf("%s looks like a project manifest; pass the GoMLX checkpoint .json file instead", path)
-	}
-	if _, ok := raw["Variables"]; !ok {
-		return nil, fmt.Errorf("%s does not look like a GoMLX checkpoint metadata file: missing Variables", path)
-	}
-
-	var metadata checkpointMetadata
-	if err := json.Unmarshal(content, &metadata); err != nil {
-		return nil, fmt.Errorf("parse checkpoint metadata %s: %w", path, err)
-	}
-	layersByName := denseTrunkWeightLayers(metadata.Variables)
-	return trunkHiddenDims(layersByName)
-}
-
-func denseTrunkWeightLayers(variables []checkpointVariable) map[string][]int {
-	const prefix = "var:/policy_model/dense_trunk/"
-	const suffix = "/dense/weights"
-
-	layersByName := make(map[string][]int)
-	for _, variable := range variables {
-		name := variable.ParameterName
-		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
-			continue
-		}
-		layerName := strings.TrimSuffix(strings.TrimPrefix(name, prefix), suffix)
-		layersByName[layerName] = variable.Dimensions
-	}
-	return layersByName
-}
-
-func trunkHiddenDims(layersByName map[string][]int) ([]int, error) {
-	dims, ok := layersByName["input_to_hidden0"]
-	if !ok {
-		return nil, fmt.Errorf("checkpoint metadata is missing dense_trunk.input_to_hidden0 weights")
-	}
-	if err := requireWeightShape("input_to_hidden0", dims, model.DenseTrunkInputDim, 0); err != nil {
-		return nil, err
-	}
-
-	hiddenDims := []int{dims[1]}
-	previousWidth := dims[1]
-	for hiddenIndex := 0; hiddenIndex < 32; hiddenIndex++ {
-		outputLayer := fmt.Sprintf("hidden%d_to_output", hiddenIndex)
-		if dims, ok := layersByName[outputLayer]; ok {
-			return hiddenDims, requireWeightShape(outputLayer, dims, previousWidth, model.PolicyVectorDim)
-		}
-
-		nextLayer := fmt.Sprintf("hidden%d_to_hidden%d", hiddenIndex, hiddenIndex+1)
-		dims, ok := layersByName[nextLayer]
-		if !ok {
-			return nil, fmt.Errorf("checkpoint metadata is missing dense_trunk.%s or dense_trunk.%s weights", outputLayer, nextLayer)
-		}
-		if err := requireWeightShape(nextLayer, dims, previousWidth, 0); err != nil {
-			return nil, err
-		}
-		hiddenDims = append(hiddenDims, dims[1])
-		previousWidth = dims[1]
-	}
-	return nil, fmt.Errorf("checkpoint metadata has too many dense trunk hidden layers")
-}
-
-func requireWeightShape(layerName string, dims []int, wantInput, wantOutput int) error {
-	if len(dims) != 2 {
-		return fmt.Errorf("dense_trunk.%s weights have dimensions %v, expected rank 2", layerName, dims)
-	}
-	if dims[0] != wantInput {
-		return fmt.Errorf("dense_trunk.%s input width is %d, expected %d", layerName, dims[0], wantInput)
-	}
-	if wantOutput > 0 && dims[1] != wantOutput {
-		return fmt.Errorf("dense_trunk.%s output width is %d, expected %d", layerName, dims[1], wantOutput)
-	}
-	return nil
-}
-
-func policyVector(ctx *context.Context, turnFeatures, occupiedTurns, virginGrid *graph.Node, trunkHiddenDims []int) *graph.Node {
-	encodedTurns := model.EncodeTurns(ctx.In("input_encoder"), turnFeatures, occupiedTurns)
-	batchSize := encodedTurns.Shape().Dim(0)
-
-	flatTurns := graph.Reshape(encodedTurns, batchSize, data.MaxTurns*model.EncodedTurnFeatureDim)
-	hidden := graph.Concatenate([]*graph.Node{virginGrid, flatTurns}, -1)
-
-	trunk := ctx.In("dense_trunk")
-	for index, outputDim := range trunkHiddenDims {
-		scope := "input_to_hidden0"
-		if index > 0 {
-			scope = fmt.Sprintf("hidden%d_to_hidden%d", index-1, index)
-		}
-		hidden = activations.Relu(layers.Dense(trunk.In(scope), hidden, true, outputDim))
-	}
-	return layers.Dense(trunk.In(fmt.Sprintf("hidden%d_to_output", len(trunkHiddenDims)-1)), hidden, true, model.PolicyVectorDim)
 }
 
 func newBackend() (backends.Backend, error) {

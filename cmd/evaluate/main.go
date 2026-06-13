@@ -90,7 +90,7 @@ func run(weightsPath, metadataPath, dataRoot string, limit, progressEvery int, j
 
 	summary := evaluation.Summarize(results, validationDir)
 	if jsonOutput {
-		return writeJSON(summary, weightsPath, metadataPath, player.TrunkHiddenDims, time.Since(started))
+		return writeJSON(summary, weightsPath, metadataPath, player, time.Since(started))
 	}
 	writeText(summary, weightsPath, metadataPath, player, time.Since(started))
 	return nil
@@ -101,7 +101,16 @@ func writeText(summary evaluation.Summary, weightsPath, metadataPath string, pla
 	fmt.Printf("model_weights=%q\n", weightsPath)
 	fmt.Printf("model_metadata=%q\n", metadataPath)
 	fmt.Printf("validation_source=%q\n", summary.ValidationSource)
-	fmt.Printf("backend=%q device=%q trunk_hidden_dims=%s\n", player.BackendDescription, player.DeviceDescription, formatInts(player.TrunkHiddenDims))
+	fmt.Printf(
+		"backend=%q device=%q trunk_hidden_dims=%s trunk_output_dim=%d policy_vector_dim=%d trainable_tail_dim=%d policy_output_head=%t\n",
+		player.BackendDescription,
+		player.DeviceDescription,
+		formatInts(player.TrunkHiddenDims),
+		player.TrunkOutputDim,
+		player.PolicyVectorDim,
+		player.TrainableTailDim,
+		player.HasPolicyOutputHead,
+	)
 	fmt.Printf("selection=%q\n", summary.Selection)
 	fmt.Printf("validation_score_percent=%.4f\n", summary.ScorePercent)
 	fmt.Printf("raw_score=%.4f\n", summary.RawScore)
@@ -116,19 +125,27 @@ func writeText(summary evaluation.Summary, weightsPath, metadataPath string, pla
 	fmt.Printf("elapsed=%s\n", elapsed.Round(time.Millisecond))
 }
 
-func writeJSON(summary evaluation.Summary, weightsPath, metadataPath string, trunkHiddenDims []int, elapsed time.Duration) error {
+func writeJSON(summary evaluation.Summary, weightsPath, metadataPath string, player *inference.Player, elapsed time.Duration) error {
 	output := struct {
 		evaluation.Summary
-		ModelWeights    string `json:"model_weights"`
-		ModelMetadata   string `json:"model_metadata"`
-		TrunkHiddenDims []int  `json:"trunk_hidden_dims"`
-		ElapsedMillis   int64  `json:"elapsed_millis"`
+		ModelWeights        string `json:"model_weights"`
+		ModelMetadata       string `json:"model_metadata"`
+		TrunkHiddenDims     []int  `json:"trunk_hidden_dims"`
+		TrunkOutputDim      int    `json:"trunk_output_dim"`
+		PolicyVectorDim     int    `json:"policy_vector_dim"`
+		TrainableTailDim    int    `json:"trainable_tail_dim"`
+		HasPolicyOutputHead bool   `json:"has_policy_output_head"`
+		ElapsedMillis       int64  `json:"elapsed_millis"`
 	}{
-		Summary:         summary,
-		ModelWeights:    weightsPath,
-		ModelMetadata:   metadataPath,
-		TrunkHiddenDims: trunkHiddenDims,
-		ElapsedMillis:   elapsed.Milliseconds(),
+		Summary:             summary,
+		ModelWeights:        weightsPath,
+		ModelMetadata:       metadataPath,
+		TrunkHiddenDims:     player.TrunkHiddenDims,
+		TrunkOutputDim:      player.TrunkOutputDim,
+		PolicyVectorDim:     player.PolicyVectorDim,
+		TrainableTailDim:    player.TrainableTailDim,
+		HasPolicyOutputHead: player.HasPolicyOutputHead,
+		ElapsedMillis:       elapsed.Milliseconds(),
 	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")

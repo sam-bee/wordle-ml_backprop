@@ -170,11 +170,11 @@ slot 4 starts at input[257]
 The dense trunk is:
 
 ```text
-321 -> 256 -> 128 -> 64
+321 -> 256 -> 128 -> 128 -> 64
 ```
 
-Use ReLU after the 256-value layer and after the 128-value layer. Do not apply an activation to the final 64-value
-vector.
+Use ReLU after the 256-value layer and after both 128-value layers. Do not apply an activation to the final 64-value
+trunk vector. The policy output head then maps `64 -> 48` without an activation.
 
 ## Policy Training
 

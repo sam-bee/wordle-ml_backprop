@@ -93,6 +93,7 @@ func TestDenseWeightStddev(t *testing.T) {
 		{fanIn: 128, want: 0.1250000000},
 		{fanIn: 321, want: 0.0789337038},
 		{fanIn: 256, want: 0.0883883476},
+		{fanIn: 64, want: 0.1767766953},
 	}
 
 	for _, tt := range tests {

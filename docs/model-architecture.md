@@ -20,8 +20,8 @@ All indices below are zero-based.
 
 ## Top-Level Shape
 
-The model maps a Wordle decision state to a 64-dimensional policy vector, then
-scores each action word by dot product against that word's 64-dimensional output
+The model maps a Wordle decision state to a 48-dimensional policy vector, then
+scores each action word by dot product against that word's 48-dimensional output
 embedding.
 
 ```text
@@ -30,7 +30,8 @@ Wordle decision state
 -> shared per-turn encoder, repeated over occupied turns
 -> 321-value dense-trunk input vector
 -> dense trunk
--> 64-value policy vector
+-> 64-value trunk output
+-> 48-value policy vector
 -> dot product with action embeddings
 -> action logits
 ```
@@ -207,13 +208,14 @@ latest representable guess.
 
 ## Dense Trunk
 
-The dense trunk maps the 321-value input vector to a 64-dimensional policy
+The dense trunk maps the 321-value input vector to a 64-dimensional trunk output.
+A separate policy output head maps that trunk output to the 48-dimensional policy
 vector.
 
 Shape:
 
 ```text
-321 -> 256 -> 128 -> 64
+321 -> 256 -> 128 -> 128 -> 64 -> 48
 ```
 
 Forward equations:
@@ -225,7 +227,11 @@ hidden0[j] = max(0, hidden0_pre[j])
 hidden1_pre[k] = trunk_b1[k] + sum_j trunk_w1[j, k] * hidden0[j]
 hidden1[k] = max(0, hidden1_pre[k])
 
-policy[p] = trunk_b2[p] + sum_k trunk_w2[k, p] * hidden1[k]
+hidden2_pre[m] = trunk_b2[m] + sum_k trunk_w2[k, m] * hidden1[k]
+hidden2[m] = max(0, hidden2_pre[m])
+
+trunk_output[p] = trunk_b3[p] + sum_m trunk_w3[m, p] * hidden2[m]
+policy[q] = head_b[q] + sum_p head_w[p, q] * trunk_output[p]
 ```
 
 Layer details:
@@ -234,10 +240,12 @@ Layer details:
 | --- | ---: | ---: | --- |
 | `dense_trunk.input_to_hidden0` | `[321,256]` | `[256]` | ReLU |
 | `dense_trunk.hidden0_to_hidden1` | `[256,128]` | `[128]` | ReLU |
-| `dense_trunk.hidden1_to_output` | `[128,64]` | `[64]` | none |
+| `dense_trunk.hidden1_to_hidden2` | `[128,128]` | `[128]` | ReLU |
+| `dense_trunk.hidden2_to_output` | `[128,64]` | `[64]` | none |
+| `policy_output_head.trunk_to_policy` | `[64,48]` | `[48]` | none |
 
-The 64-dimensional policy vector is linear. There is no output activation and
-no normalization.
+The 64-dimensional trunk output and 48-dimensional policy vector are linear.
+There is no output activation and no normalization.
 
 ## Trainable Variables
 
@@ -257,25 +265,30 @@ Dense variable scopes:
 | `policy_model.dense_trunk.input_to_hidden0.dense.biases` | `[256]` | 256 |
 | `policy_model.dense_trunk.hidden0_to_hidden1.dense.weights` | `[256,128]` | 32,768 |
 | `policy_model.dense_trunk.hidden0_to_hidden1.dense.biases` | `[128]` | 128 |
-| `policy_model.dense_trunk.hidden1_to_output.dense.weights` | `[128,64]` | 8,192 |
-| `policy_model.dense_trunk.hidden1_to_output.dense.biases` | `[64]` | 64 |
+| `policy_model.dense_trunk.hidden1_to_hidden2.dense.weights` | `[128,128]` | 16,384 |
+| `policy_model.dense_trunk.hidden1_to_hidden2.dense.biases` | `[128]` | 128 |
+| `policy_model.dense_trunk.hidden2_to_output.dense.weights` | `[128,64]` | 8,192 |
+| `policy_model.dense_trunk.hidden2_to_output.dense.biases` | `[64]` | 64 |
+| `policy_model.policy_output_head.trunk_to_policy.dense.weights` | `[64,48]` | 3,072 |
+| `policy_model.policy_output_head.trunk_to_policy.dense.biases` | `[48]` | 48 |
 
 Dense parameter counts:
 
 | Group | Trainable Scalars |
 | --- | ---: |
 | Shared input encoder | 26,944 |
-| Dense trunk | 123,584 |
-| Dense policy network total | 150,528 |
+| Dense trunk | 140,096 |
+| Policy output head | 3,120 |
+| Dense policy network total | 170,160 |
 
 The output-embedding tail is also trainable:
 
 | Variable | Shape | Trainable Scalars |
 | --- | ---: | ---: |
-| `output_embeddings.trainable_tail` | `[A,38]` | `A * 38` |
+| `output_embeddings.trainable_tail` | `[A,22]` | `A * 22` |
 
-For the full 4,739-word action catalog, the tail contains 180,082 trainable
-scalars and the whole policy model contains 330,610 trainable scalars.
+For the full 4,739-word action catalog, the tail contains 104,258 trainable
+scalars and the whole policy model contains 274,418 trainable scalars.
 
 Model persistence is handled by GoMLX checkpoints. The architecture contract
 does not define a separate binary export format.
@@ -283,13 +296,13 @@ does not define a separate binary export format.
 ## Output Embeddings
 
 The model does not have a dense output neuron per word. Instead, each active
-action word has a 64-dimensional embedding, and the 64-dimensional policy vector
+action word has a 48-dimensional embedding, and the 48-dimensional policy vector
 is scored against each embedding by dot product.
 
 Each action embedding is:
 
 ```text
-[26 fixed word features | 38 trainable tail features]
+[26 fixed word features | 22 trainable tail features]
 ```
 
 ### Fixed Word Features
@@ -316,16 +329,16 @@ These fixed features are count-aware, not just present/absent.
 
 ### Trainable Tail Features
 
-Dimensions `26..63` are trainable. There are 38 tail values per active action
+Dimensions `26..47` are trainable. There are 22 tail values per active action
 word.
 
-For an action at index `a` and tail feature `t` in `0..37`:
+For an action at index `a` and tail feature `t` in `0..21`:
 
 ```text
 embedding[26 + t] = trainable_tail[a][t]
 ```
 
-Only this 38-dimensional tail is trainable per action word. The fixed 26
+Only this 22-dimensional tail is trainable per action word. The fixed 26
 dimensions are deterministic features. There is no trainable scalar bias per
 action.
 
@@ -336,7 +349,7 @@ For policy vector `p` and action word `w`:
 ```text
 score(w) =
     sum_i=0..25  p[i]      * fixed_word_feature(w)[i]
-  + sum_t=0..37  p[26 + t] * trainable_tail[w][t]
+  + sum_t=0..21  p[26 + t] * trainable_tail[w][t]
 ```
 
 `model.PolicyModel` returns all action scores as logits with shape `[B,A]`.
@@ -379,7 +392,9 @@ Default dense weight standard deviations:
 | `input_encoder.hidden_to_output` | 128 | 0.125 |
 | `dense_trunk.input_to_hidden0` | 321 | 0.0789337038 |
 | `dense_trunk.hidden0_to_hidden1` | 256 | 0.0883883476 |
-| `dense_trunk.hidden1_to_output` | 128 | 0.125 |
+| `dense_trunk.hidden1_to_hidden2` | 128 | 0.125 |
+| `dense_trunk.hidden2_to_output` | 128 | 0.125 |
+| `policy_output_head.trunk_to_policy` | 64 | 0.1767766953 |
 
 Output embedding tail values use:
 
@@ -438,7 +453,12 @@ forward_policy(state):
     for j in 0..127:
         h1[j] = relu(h1[j])
 
-    return dense(trunk_w2, trunk_b2, h1)  // length 64
+    h2 = dense(trunk_w2, trunk_b2, h1)
+    for j in 0..127:
+        h2[j] = relu(h2[j])
+
+    trunk_output = dense(trunk_w3, trunk_b3, h2)  // length 64
+    return dense(head_w, head_b, trunk_output)    // length 48
 
 fixed_word_features(word):
     counts = zeros(26)
@@ -453,7 +473,7 @@ score_action(policy, action_word, tail_row):
     score = 0.0
     for i in 0..25:
         score += policy[i] * fixed[i]
-    for t in 0..37:
+    for t in 0..21:
         score += policy[26 + t] * tail_row[t]
     return score
 
