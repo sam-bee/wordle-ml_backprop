@@ -21,7 +21,7 @@ const (
 	InputEncoderHidden    = 128
 	EncodedTurnFeatureDim = 64
 
-	DenseTrunkInputDim = 1 + data.MaxTurns*EncodedTurnFeatureDim
+	DenseTrunkInputDim = 1 + data.MaxTurns + data.MaxTurns*RawTurnFeatureCount
 	DenseTrunkHidden0  = 256
 	DenseTrunkHidden1  = 128
 	PolicyVectorDim    = 64
@@ -61,11 +61,10 @@ func PolicyModel(ctx *context.Context, _ any, inputs []*graph.Node) []*graph.Nod
 func PolicyVector(ctx *context.Context, turnFeatures, occupiedTurns, virginGrid *graph.Node) *graph.Node {
 	validateDecisionStateInputs(turnFeatures, occupiedTurns, virginGrid)
 
-	encodedTurns := EncodeTurns(ctx.In("input_encoder"), turnFeatures, occupiedTurns)
-	batchSize := encodedTurns.Shape().Dim(0)
+	batchSize := turnFeatures.Shape().Dim(0)
 
-	flatTurns := graph.Reshape(encodedTurns, batchSize, data.MaxTurns*EncodedTurnFeatureDim)
-	modelInput := graph.Concatenate([]*graph.Node{virginGrid, flatTurns}, -1)
+	flatTurns := graph.Reshape(turnFeatures, batchSize, data.MaxTurns*RawTurnFeatureCount)
+	modelInput := graph.Concatenate([]*graph.Node{virginGrid, occupiedTurns, flatTurns}, -1)
 
 	trunk := ctx.In("dense_trunk")
 	hidden0 := activations.Relu(dense(trunk.In("input_to_hidden0"), modelInput, DenseTrunkHidden0))
