@@ -22,7 +22,7 @@ full-train:
 	go run ./cmd/train --batch-size 32 --epochs 50 --learning-rate 0.01 --learning-rate-decay --max-train-batches 0 --max-validation-batches 0 --log-every 50
 
 mini-train:
-	go run ./cmd/train --batch-size 32 --epochs 50 --learning-rate 0.01 --learning-rate-decay --max-train-batches 0 --max-validation-batches 0 --log-every 50 --train-split mini --validation-split mini
+	go run ./cmd/train --batch-size 32 --epochs 300 --learning-rate 0.01 --learning-rate-decay --max-train-batches 0 --max-validation-batches 0 --log-every 50 --train-split mini --validation-split mini
 
 resume-full-train:
 	go run ./cmd/train --batch-size 32 --epochs 1 --learning-rate 0.05 --max-train-batches 0 --max-validation-batches 0 --log-every 50 --resume
