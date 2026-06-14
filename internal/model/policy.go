@@ -19,11 +19,13 @@ const (
 	FeedbackAlphabetSize  = 3
 	RawTurnFeatureCount   = data.WordLength*LetterAlphabetSize + data.WordLength*FeedbackAlphabetSize
 	InputEncoderHidden    = 128
+	InputEncoderHidden64  = 64
 	EncodedTurnFeatureDim = 64
 
 	DenseTrunkInputDim = 1 + data.MaxTurns*EncodedTurnFeatureDim
 	DenseTrunkHidden0  = 256
-	DenseTrunkHidden1  = 128
+	DenseTrunkHidden1  = 256
+	DenseTrunkHidden2  = 128
 	PolicyVectorDim    = 64
 
 	FixedActionFeatureDim     = 26
@@ -70,7 +72,8 @@ func PolicyVector(ctx *context.Context, turnFeatures, occupiedTurns, virginGrid 
 	trunk := ctx.In("dense_trunk")
 	hidden0 := activations.Relu(dense(trunk.In("input_to_hidden0"), modelInput, DenseTrunkHidden0))
 	hidden1 := activations.Relu(dense(trunk.In("hidden0_to_hidden1"), hidden0, DenseTrunkHidden1))
-	return dense(trunk.In("hidden1_to_output"), hidden1, PolicyVectorDim)
+	hidden2 := activations.Relu(dense(trunk.In("hidden1_to_hidden2"), hidden1, DenseTrunkHidden2))
+	return dense(trunk.In("hidden2_to_output"), hidden2, PolicyVectorDim)
 }
 
 // EncodeTurns applies the shared per-turn encoder and zeroes unoccupied slots.
@@ -81,7 +84,8 @@ func EncodeTurns(ctx *context.Context, turnFeatures, occupiedTurns *graph.Node) 
 	flatTurns := graph.Reshape(turnFeatures, batchSize*data.MaxTurns, RawTurnFeatureCount)
 
 	hidden := activations.Relu(dense(ctx.In("input_to_hidden"), flatTurns, InputEncoderHidden))
-	encoded := dense(ctx.In("hidden_to_output"), hidden, EncodedTurnFeatureDim)
+	hidden64 := activations.Relu(dense(ctx.In("hidden_to_hidden64"), hidden, InputEncoderHidden64))
+	encoded := dense(ctx.In("hidden64_to_output"), hidden64, EncodedTurnFeatureDim)
 	encoded = graph.Reshape(encoded, batchSize, data.MaxTurns, EncodedTurnFeatureDim)
 
 	mask := graph.InsertAxes(occupiedTurns, -1)
