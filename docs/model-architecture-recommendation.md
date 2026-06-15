@@ -18,8 +18,8 @@ Use this as the lead candidate for the next larger-data validation step, but kee
 validation loss, but its lead over `experiment/mini-depth-plus-three` is narrow: `7.812392` vs `7.824779`. On paired
 seeds, the wider trunk won 2 of 5 seeds and averaged `0.012387` lower final validation loss.
 
-Do not adopt the smaller output tail, flat raw-state encoder, or transformer state encoder yet. They do not beat the
-best dense-trunk variants on final validation loss.
+Do not adopt the smaller output tail, flat raw-state encoder, transformer state encoder, or direct action-logit head
+yet. They do not beat the best dense-trunk variants on final validation loss.
 
 ## Why This Direction
 
@@ -74,7 +74,8 @@ The primary comparison metric is final validation mean loss. `validation_delta_f
 validation loss differs by architecture because model initialization differs, so final validation loss is the cleaner
 architecture comparison.
 
-The full per-run record is committed at `docs/mini-experiment-rerun-2026-06-14.csv`.
+The full per-run architecture rerun record is committed at `docs/mini-experiment-rerun-2026-06-14.csv`. The direct
+action-logit follow-up record is committed at `docs/direct-action-logits-experiment-2026-06-15.csv`.
 
 ## Branch Coverage
 
@@ -129,6 +130,39 @@ Best variant per seed:
 | 20260615 | `experiment/mini-deeper-dense-trunk-wide` | 7.783216 | `experiment/mini-deep-small-tail` | 7.790408 | 0.007192 |
 | 20260616 | `experiment/mini-depth-plus-three` | 7.800911 | `experiment/mini-deeper-dense-trunk-wide` | 7.845639 | 0.044728 |
 | 20260617 | `experiment/mini-depth-plus-three` | 7.777839 | `experiment/mini-deeper-dense-trunk-wide` | 7.800115 | 0.022276 |
+
+## Direct Action-Logit Follow-Up
+
+Branch `experiment/mini-direct-action-logits` tested the current wider trunk with a direct learned action head instead
+of output embeddings. The direct head keeps the same shared turn encoder and trunk through the final 128-wide hidden
+state, then emits one learned logit per action:
+
+```text
+shared turn encoder: 145 -> 128 -> 64
+dense trunk:         321 -> 256 -> 256 -> 256 -> 128 -> 128 -> 128
+direct logits:       128 -> action_count
+```
+
+This was worse than the output-embedding head on every paired seed:
+
+| Seed | Embedding Final Train | Embedding Final Validation | Direct Final Train | Direct Final Validation | Direct Minus Embedding Validation |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 20260613 | 7.521885 | 7.809017 | 8.258083 | 8.339715 | 0.530698 |
+| 20260614 | 7.526208 | 7.823971 | 8.342547 | 8.391163 | 0.567192 |
+| 20260615 | 7.488623 | 7.783216 | 8.219765 | 8.309016 | 0.525800 |
+| 20260616 | 7.564678 | 7.845639 | 8.350034 | 8.394972 | 0.549333 |
+| 20260617 | 7.507139 | 7.800115 | 8.300537 | 8.364250 | 0.564135 |
+
+Five-seed averages:
+
+| Variant | Runs | Avg Final Train | Avg Final Validation | Final Validation SD | Best Final Validation | Worst Final Validation |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Wider trunk + output embeddings | 5 | 7.521707 | 7.812392 | 0.023732 | 7.783216 | 7.845639 |
+| Wider trunk + direct action logits | 5 | 8.294193 | 8.359823 | 0.036135 | 8.309016 | 8.394972 |
+
+The direct-logit head averaged `0.547431` worse final validation loss and also had much worse final train loss, so this
+looks like optimization or sample-efficiency trouble rather than merely overfitting. The output-embedding head should
+stay in place.
 
 ## Next Validation Gate
 
