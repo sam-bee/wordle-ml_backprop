@@ -24,7 +24,8 @@ The default active action count is `20`, but the initialization rule is the same
 GoMLX initializes trainable variables in the graph variable dtype. The current training path supplies `float32` tensors,
 so current policy variables are `float32`.
 
-There is no clipping or hard min/max range before assignment. The normal distributions are unbounded.
+There is no clipping or hard min/max range before assignment. Dense weights and raw output-tail values are sampled from
+unbounded normal distributions. Final output-tail rows are then rescaled by the median-norm rule below.
 
 ## Initialization Parameters
 
@@ -42,8 +43,8 @@ dense_weight_gain > 0.0
 output_embedding_tail_stddev >= 0.0
 ```
 
-If `output_embedding_tail_stddev` is `0.0`, every randomly initialized trainable tail value is exactly zero after
-sampling.
+If `output_embedding_tail_stddev` is `0.0`, every trainable tail value is exactly zero after sampling and median-norm
+normalization.
 
 ## Dense Layer Initialization
 
@@ -112,16 +113,30 @@ The remaining 38 values are trainable tail parameters.
 For each active action row `a` in `0..A-1` and each trainable feature `j` in `0..37`:
 
 ```text
-tail[a][j] ~ Normal(mean = 0.0, stddev = output_embedding_tail_stddev)
+raw_tail[a][j] ~ Normal(mean = 0.0, stddev = output_embedding_tail_stddev)
 ```
 
 With default configuration:
 
 ```text
-tail[a][j] ~ Normal(mean = 0.0, stddev = 0.05)
+raw_tail[a][j] ~ Normal(mean = 0.0, stddev = 0.05)
 ```
 
-Each tail value is independently sampled.
+Each raw tail value is independently sampled. After sampling, the final trainable tail rows are rescaled so every
+nonzero 38-value row has the median raw row norm:
+
+```text
+raw_norm[a] = sqrt(sum j=0..37 raw_tail[a][j]^2)
+target_norm = median(raw_norm[0..A-1])
+
+if raw_norm[a] == 0.0:
+    tail[a][j] = 0.0
+otherwise:
+    tail[a][j] = raw_tail[a][j] * (target_norm / raw_norm[a])
+```
+
+If `A` is even, the median is the average of the two middle values after sorting the raw row norms ascending. Only the
+38-value trainable tail participates in this norm. The fixed 26-value prefix is ignored and is not rescaled.
 
 There are:
 
@@ -129,7 +144,7 @@ There are:
 38 * A
 ```
 
-random output-tail parameters.
+trainable output-tail parameters.
 
 ## Action Scoring
 
@@ -144,25 +159,26 @@ score(action) =
 
 The selected action is the active action word with the highest score.
 
-## Output Embedding Magnitude Standardization
+## Output Embedding Tail Magnitude Standardization
 
-Initial random model creation does not standardize or normalize output embedding vectors.
+Initial random model creation normalizes output-tail row magnitudes, but it does not normalize full output embedding
+vectors.
 
 Specifically, during initial random creation:
 
 - fixed 26-value word features are used exactly as described above
-- trainable 38-value tails are sampled from `Normal(0.0, 0.05)`
-- no tail row is rescaled to a target norm
+- raw trainable 38-value tails are sampled from `Normal(0.0, 0.05)`
+- each nonzero 38-value tail row is rescaled to the median raw tail-row norm
 - no full 64-value output embedding is normalized
 - no output embedding is clipped to a magnitude range
 
-The expected trainable-tail L2 norm at initialization is approximately:
+The sampled median raw tail norm is the enforced target for that initialization run. It is usually near:
 
 ```text
 sqrt(38) * 0.05 = 0.3082207001
 ```
 
-This is only a distributional expectation, not an enforced value.
+but this value is not a fixed constant and is not computed from the 26 fixed word features.
 
 ## Later Action-Space Changes
 
@@ -225,7 +241,30 @@ function make_random_model(action_words, action_count, rng, config):
             value = normal_sample(rng, mean = 0.0, stddev = config.output_embedding_tail_stddev)
             model.tail[action_index][feature_index] = value
 
+    normalize_tail_rows_to_median_norm(model.tail)
+
     return model
+
+function normalize_tail_rows_to_median_norm(tail):
+    norms = []
+    for action_index from 0 to action_count - 1:
+        norm = sqrt(sum feature_index=0..37 tail[action_index][feature_index]^2)
+        norms.append(norm)
+
+    sorted_norms = sort_ascending(norms)
+    lower = sorted_norms[(action_count - 1) / 2]
+    upper = sorted_norms[action_count / 2]
+    target_norm = (lower + upper) / 2.0
+
+    for action_index from 0 to action_count - 1:
+        norm = norms[action_index]
+        if norm == 0.0:
+            for feature_index from 0 to 37:
+                tail[action_index][feature_index] = 0.0
+        otherwise:
+            scale = target_norm / norm
+            for feature_index from 0 to 37:
+                tail[action_index][feature_index] *= scale
 
 function initialize_dense_layer(layer, input_size, output_size, rng, dense_weight_gain):
     stddev = dense_weight_gain * sqrt(2.0 / input_size)
@@ -250,7 +289,7 @@ The GoMLX implementation exposes these rules in `internal/model`:
 - `RandomInitializationConfig` holds `dense_weight_gain` and `output_embedding_tail_stddev`.
 - `ConfigureRandomInitialization` stores validated initialization settings on a GoMLX context.
 - Dense layers in `PolicyModel` use `Normal(0, dense_weight_gain * sqrt(2/fan_in))` weights and zero biases.
-- The trainable output tail uses `Normal(0, output_embedding_tail_stddev)`.
+- The trainable output tail starts from `Normal(0, output_embedding_tail_stddev)` and is then median-normalized row-wise.
 - `FixedActionFeatures` and `FixedActionFeatureMatrix` build the fixed 26-value action feature prefix.
 
 The current project persists model state through native GoMLX checkpoints, so GoMLX variables are initialized and saved in

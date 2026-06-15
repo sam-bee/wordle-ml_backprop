@@ -381,13 +381,20 @@ Default dense weight standard deviations:
 | `dense_trunk.hidden0_to_hidden1` | 256 | 0.0883883476 |
 | `dense_trunk.hidden1_to_output` | 128 | 0.125 |
 
-Output embedding tail values use:
+Output embedding tail rows are initialized in two steps. First, raw tail values use:
 
 ```text
-trainable_tail[a][t] ~ Normal(mean = 0.0, stddev = output_embedding_tail_stddev)
+raw_tail[a][t] ~ Normal(mean = 0.0, stddev = output_embedding_tail_stddev)
 ```
 
-with default `stddev = 0.05`.
+with default `stddev = 0.05`. Then each nonzero 38-value raw tail row is rescaled to the median raw row L2 norm:
+
+```text
+target_norm = median(norm(raw_tail[a]) for all active actions)
+trainable_tail[a] = raw_tail[a] * (target_norm / norm(raw_tail[a]))
+```
+
+Zero raw rows remain zero. The fixed 26 word-feature dimensions are not included in this norm and are not rescaled.
 
 ## Minimal Forward Pseudocode
 
