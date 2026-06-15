@@ -1,6 +1,6 @@
 # Model Architecture Recommendation
 
-Date: 2026-06-14
+Date: 2026-06-15
 
 ## Recommendation
 
@@ -74,8 +74,9 @@ The primary comparison metric is final validation mean loss. `validation_delta_f
 validation loss differs by architecture because model initialization differs, so final validation loss is the cleaner
 architecture comparison.
 
-The full per-run architecture rerun record is committed at `docs/mini-experiment-rerun-2026-06-14.csv`. The direct
-action-logit follow-up record is committed at `docs/direct-action-logits-experiment-2026-06-15.csv`.
+The full per-run architecture rerun record is committed at `docs/mini-experiment-rerun-2026-06-14.csv`. The mini direct
+action-logit follow-up record is committed at `docs/direct-action-logits-experiment-2026-06-15.csv`. The full-dataset
+direct action-logit follow-up record is committed at `docs/full-direct-action-logits-experiment-2026-06-15.csv`.
 
 ## Branch Coverage
 
@@ -163,6 +164,34 @@ Five-seed averages:
 The direct-logit head averaged `0.547431` worse final validation loss and also had much worse final train loss, so this
 looks like optimization or sample-efficiency trouble rather than merely overfitting. The output-embedding head should
 stay in place.
+
+## Full-Data Direct Action-Logit Follow-Up
+
+The same head comparison was rerun against the full training set for 60 epochs on three paired seeds:
+
+```sh
+make full-train TRAIN_ARGS='--epochs 60 --seed <seed>'
+```
+
+The output-embedding runs used `experiment/mini-deeper-dense-trunk-wide` at commit `2238293`; the direct-logit runs used
+`experiment/mini-direct-action-logits` at commit `707e00b`. All runs reached global step `86580`, and the manifest
+metrics were cross-checked against scalar export values.
+
+| Seed | Embedding Final Train | Embedding Final Validation | Direct Final Train | Direct Final Validation | Direct Minus Embedding Validation |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 20260613 | 7.957239 | 8.129922 | 8.446190 | 8.453453 | 0.323530 |
+| 20260614 | 7.951001 | 8.153450 | 8.442034 | 8.459470 | 0.306020 |
+| 20260615 | 7.992123 | 8.175472 | 8.436596 | 8.460229 | 0.284757 |
+
+Three-seed averages:
+
+| Variant | Runs | Avg Final Train | Avg Final Validation | Final Validation SD | Best Final Validation | Worst Final Validation | Avg Validation Delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Wider trunk + output embeddings | 3 | 7.966788 | 8.152948 | 0.022779 | 8.129922 | 8.175472 | -1.461844 |
+| Wider trunk + direct action logits | 3 | 8.441606 | 8.457717 | 0.003713 | 8.453453 | 8.460229 | -0.086189 |
+
+On the full dataset, the direct-logit head averaged `0.304769` worse final validation loss and lost all three paired
+seeds. The output-embedding head remains the better candidate for larger-data work.
 
 ## Next Validation Gate
 
