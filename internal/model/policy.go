@@ -43,7 +43,7 @@ const (
 //   - virgin-grid flag: [batch, 1], with 1.0 only for an empty grid
 //   - fixed action features: [action_count, 26]
 //
-// It returns one tensor of action logits with shape [batch, action_count].
+// It returns one tensor of direct action logits with shape [batch, action_count].
 func PolicyModel(ctx *context.Context, _ any, inputs []*graph.Node) []*graph.Node {
 	if len(inputs) != PolicyModelInputCount {
 		panic(fmt.Sprintf("policy model expects %d input tensors, got %d", PolicyModelInputCount, len(inputs)))
@@ -56,13 +56,29 @@ func PolicyModel(ctx *context.Context, _ any, inputs []*graph.Node) []*graph.Nod
 
 	validatePolicyInputs(turnFeatures, occupiedTurns, virginGrid, fixedActionFeatures)
 
-	policy := PolicyVector(ctx.In("policy_model"), turnFeatures, occupiedTurns, virginGrid)
-	logits := ActionLogits(ctx.In("output_embeddings"), policy, fixedActionFeatures)
+	logits := DirectActionLogits(ctx.In("policy_model"), turnFeatures, occupiedTurns, virginGrid, fixedActionFeatures)
 	return []*graph.Node{logits}
+}
+
+// DirectActionLogits maps a Wordle decision state directly to one logit per action.
+func DirectActionLogits(ctx *context.Context, turnFeatures, occupiedTurns, virginGrid, fixedActionFeatures *graph.Node) *graph.Node {
+	validatePolicyInputs(turnFeatures, occupiedTurns, virginGrid, fixedActionFeatures)
+
+	actionCount := fixedActionFeatures.Shape().Dim(0)
+	hidden := PolicyHidden(ctx, turnFeatures, occupiedTurns, virginGrid)
+	return dense(ctx.In("direct_logits"), hidden, actionCount)
 }
 
 // PolicyVector maps a Wordle decision state to the 64-dimensional policy vector.
 func PolicyVector(ctx *context.Context, turnFeatures, occupiedTurns, virginGrid *graph.Node) *graph.Node {
+	validateDecisionStateInputs(turnFeatures, occupiedTurns, virginGrid)
+
+	hidden := PolicyHidden(ctx, turnFeatures, occupiedTurns, virginGrid)
+	return dense(ctx.In("dense_trunk").In("hidden5_to_output"), hidden, PolicyVectorDim)
+}
+
+// PolicyHidden maps a Wordle decision state to the final dense-trunk hidden representation.
+func PolicyHidden(ctx *context.Context, turnFeatures, occupiedTurns, virginGrid *graph.Node) *graph.Node {
 	validateDecisionStateInputs(turnFeatures, occupiedTurns, virginGrid)
 
 	encodedTurns := EncodeTurns(ctx.In("input_encoder"), turnFeatures, occupiedTurns)
@@ -78,7 +94,7 @@ func PolicyVector(ctx *context.Context, turnFeatures, occupiedTurns, virginGrid 
 	hidden3 := activations.Relu(dense(trunk.In("hidden2_to_hidden3"), hidden2, DenseTrunkHidden3))
 	hidden4 := activations.Relu(dense(trunk.In("hidden3_to_hidden4"), hidden3, DenseTrunkHidden4))
 	hidden5 := activations.Relu(dense(trunk.In("hidden4_to_hidden5"), hidden4, DenseTrunkHidden5))
-	return dense(trunk.In("hidden5_to_output"), hidden5, PolicyVectorDim)
+	return hidden5
 }
 
 // EncodeTurns applies the shared per-turn encoder and zeroes unoccupied slots.
