@@ -5,6 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gomlx/gomlx/backends"
+	_ "github.com/gomlx/gomlx/backends/default"
+	"github.com/gomlx/gomlx/pkg/core/graph"
+	"github.com/gomlx/gomlx/pkg/core/tensors"
 	"github.com/gomlx/gomlx/pkg/ml/context"
 
 	"github.com/sam-bee/wordle-ml_backprop/internal/data"
@@ -151,6 +155,82 @@ func TestFixedActionFeatureMatrix(t *testing.T) {
 	}
 	if _, err := FixedActionFeatureMatrix(words, 0); err == nil {
 		t.Fatal("FixedActionFeatureMatrix() succeeded with zero active actions, want error")
+	}
+}
+
+func TestNormalizeRowsToMedianNormEvenRowCount(t *testing.T) {
+	output := execModelGraph(t, func(g *graph.Graph) *graph.Node {
+		rows := graph.Const(g, [][]float32{
+			{1, 0, 0},
+			{0, 2, 0},
+			{0, 0, -4},
+			{8, 0, 0},
+		})
+		return normalizeRowsToMedianNorm(rows)
+	})
+	defer output.MustFinalizeAll()
+
+	got := tensors.MustCopyFlatData[float32](output)
+	want := []float32{
+		3, 0, 0,
+		0, 3, 0,
+		0, 0, -3,
+		3, 0, 0,
+	}
+	assertFloat32SlicesClose(t, got, want, 1e-6)
+}
+
+func TestNormalizeRowsToMedianNormLeavesZeroRowsAtZero(t *testing.T) {
+	output := execModelGraph(t, func(g *graph.Graph) *graph.Node {
+		rows := graph.Const(g, [][]float32{
+			{0, 0, 0},
+			{3, 4, 0},
+			{0, 0, 10},
+		})
+		return normalizeRowsToMedianNorm(rows)
+	})
+	defer output.MustFinalizeAll()
+
+	got := tensors.MustCopyFlatData[float32](output)
+	want := []float32{
+		0, 0, 0,
+		3, 4, 0,
+		0, 0, 5,
+	}
+	assertFloat32SlicesClose(t, got, want, 1e-6)
+}
+
+func execModelGraph(t *testing.T, fn func(g *graph.Graph) *graph.Node) *tensors.Tensor {
+	t.Helper()
+
+	backend, err := backends.NewWithConfig("go")
+	if err != nil {
+		t.Fatalf("create GoMLX go backend: %v", err)
+	}
+	t.Cleanup(backend.Finalize)
+
+	outputs, err := graph.ExecOnceN(backend, func(g *graph.Graph) []*graph.Node {
+		return []*graph.Node{fn(g)}
+	})
+	if err != nil {
+		t.Fatalf("execute graph: %v", err)
+	}
+	if len(outputs) != 1 {
+		t.Fatalf("len(outputs) = %d, want 1", len(outputs))
+	}
+	return outputs[0]
+}
+
+func assertFloat32SlicesClose(t *testing.T, got, want []float32, tolerance float64) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("len(got) = %d, len(want) = %d", len(got), len(want))
+	}
+	for i := range got {
+		if math.Abs(float64(got[i]-want[i])) > tolerance {
+			t.Fatalf("got[%d] = %g, want %g", i, got[i], want[i])
+		}
 	}
 }
 

@@ -139,7 +139,7 @@ func outputTailInitializer(ctx *context.Context) initializers.VariableInitialize
 	if err := config.Validate(); err != nil {
 		panic(fmt.Sprintf("invalid random initialization config: %v", err))
 	}
-	return randomNormalFn(ctx, config.OutputEmbeddingTailStddev)
+	return medianNormalizedOutputTailFn(ctx, config.OutputEmbeddingTailStddev)
 }
 
 func heWithGainFn(ctx *context.Context, denseWeightGain float64) initializers.VariableInitializer {
@@ -171,6 +171,35 @@ func randomNormalFn(ctx *context.Context, stddev float64) initializers.VariableI
 		values := ctx.RandomNormal(g, shape)
 		return graph.MulScalar(values, stddev)
 	}
+}
+
+func medianNormalizedOutputTailFn(ctx *context.Context, stddev float64) initializers.VariableInitializer {
+	return func(g *graph.Graph, shape shapes.Shape) *graph.Node {
+		tail := randomNormalFn(ctx, stddev)(g, shape)
+		if !shape.DType.IsFloat() {
+			return tail
+		}
+		if shape.Rank() != 2 {
+			panic(fmt.Sprintf("output embedding tail must have rank 2, got shape %s", shape))
+		}
+		return normalizeRowsToMedianNorm(tail)
+	}
+}
+
+func normalizeRowsToMedianNorm(rows *graph.Node) *graph.Node {
+	if rows.Shape().Rank() != 2 {
+		panic(fmt.Sprintf("rows must have rank 2, got shape %s", rows.Shape()))
+	}
+
+	rowCount := rows.Shape().Dim(0)
+	rowNorms := graph.Reshape(graph.L2Norm(rows, -1), rowCount)
+	sortedNorms := graph.Sort(rowNorms, 0, true)
+
+	lower := graph.Slice(sortedNorms, graph.AxisElem((rowCount-1)/2))
+	upper := graph.Slice(sortedNorms, graph.AxisElem(rowCount/2))
+	medianNorm := graph.Reshape(graph.MulScalar(graph.Add(lower, upper), 0.5))
+
+	return graph.Mul(graph.L2Normalize(rows, -1), medianNorm)
 }
 
 func isFinite(value float64) bool {
